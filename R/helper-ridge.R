@@ -195,3 +195,72 @@ initialise_with_Amat <- function(init, n_terms, grp, Amat) {
     init
 }
 
+check_grp <- function(grp) {
+
+    ## check grp field names
+    if (c("pop", "sub") %in% names(grp)) {
+        stop("Missing grp variables.")
+    }
+
+    ## check grp lengths
+    if (length(grp$pop) != length(grp$sub)) {
+        stop("Unequal length of grp$pop and grp$sub")
+    }
+
+    ## sub factor must be nested within pop factor
+    sublvl_in_pop <- tapply(grp$sub, grp$pop, unique, simplify = FALSE)
+
+    if (length(unlist(sublvl_in_pop)) > length(unique(grp$sub))) {
+        stop("Each subject can only appear in one population.")
+    }
+
+    if (all(lapply(grp, is.factor))) {
+        lapply(grp, droplevels)
+    } else {
+        lapply(grp, factor)
+    }
+}
+
+check_Bmat <- function(Bmat, Kmat) {
+
+    ## check grp field names
+    if (c("pop", "sub") %in% names(Bmat)) {
+        stop("Missing Bmat variables.")
+    }
+
+    ## check Bmat lengths
+    if (NROW(Bmat$pop) != NROW(Bmat$sub)) {
+        stop("Unequal length of Bmat$pop and Bmat$sub.")
+    }
+
+    ## check col of Bmat
+    if (NCOL(Bmat$pop) != NCOL(Kmat)) {
+        stop("Inconsistant columns of Bmat and Kmat.")
+    }
+    Bmat
+}
+
+check_prior <- function(prior) {
+
+    ## build a prior for covariance if not give
+    if (is.null(prior)) {
+        prior <- list(ig_a = list(pop = 0.001, sub2 = 0.001, eps = 0.001),
+                      ig_b = list(pop = 0.001, sub2 = 0.001, eps = 0.001),
+                      iw_v = dim_sub1 + 1,
+                      iw_lambda = diag(dim_sub1)) # assuming symmetry
+    }
+
+    ## check prior field name
+    check_names <- prod(c("ig_a", "ig_b", "iw_v", "iw_lambda") %in% names(prior),
+                        c("pop", "sub2", "eps") %in% names(prior$ig_a),
+                        c("pop", "sub2", "eps") %in% names(prior$ig_b))
+    if (check_names == 0) {
+        stop("Missing prior hyperparameters.")
+    }
+    prior
+}
+
+
+
+
+
