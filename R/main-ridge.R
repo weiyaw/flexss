@@ -46,6 +46,40 @@ update_prec <- function(coef, resids, para, prior) {
     prec
 }
 
+## update theta_l
+
+update_theta_l <- function(xB_l, Bxy_l, xKmat, kprec, para) {
+
+    n_terms_pop <- para$n_terms_pop
+    n_subs_in_pop <- NCOL(Bxy_l)
+    ## xB_l (list of arrays of relevant xB)
+    xB_sub_l <- xB_l$sub
+    xB_pop_l <- xB_l$pop
+    xB_subpop_l <- xB_l$subpop
+    ## Bxy_l (list of matrices of relevant Bxy)
+    Bxy_pop_l <- Bxy_l$pop
+    Bxy_sub_l <- Bxy_l$sub
+
+    BMB <- array(NA, c(n_terms_pop, n_terms_pop, n_subs_in_pop))
+    BMy <- matrix(NA, n_terms_pop, n_subs_in_pop)
+    for (i in seq_len(n_subs_in_pop)) {
+        Li <- xB_sub_l[, , i] + kprec$sub / kprec$eps
+        inv_Li <- chol2inv(chol(Li))
+        BBLBB_i <- crossprod(xB_subpop_l[, , i], inv_Li %*% xB_subpop_l[, , i])
+        BMB[, , i] <- kprec$eps * (xB_pop_l[, , i] - BBLBB_i)
+        BBLBy_i <- crossprod(xB_subpop_l[, , i], inv_Li %*% Bxy_sub_l[, i])
+        BMy[, i] <- kprec$eps * (Bxy_pop_l[, i] - BBLBy_i)
+    }
+    Phi <- kprec$pop * xKmat + rowSums(BMB, dims = 2)
+    inv_Phi <- chol2inv(chol(Phi))
+    t(mvtnorm::rmvnorm(1, inv_Phi %*% rowSums(BMy), inv_Phi))
+}
+
+
+## update delta_i
+
+
+
 
 ## This is a Gibbs sampler v2 for longitudinal Bayesian ridge; see thesis.
 ## Update two block of parameters: variance and coefs
@@ -58,42 +92,50 @@ bayes_ridge_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, burn, size,
 
     grp <- check_grp(grp)
     Bmat <- check_Bmat(Bmat)
-    prior <- check_prior(prior)
+    prior <- check_prior(prior, dim_sub1)
 
     ## some precalculation
     rank_K <- NROW(Kmat)
-    n_terms <- list(pop = NCOL(Bmat$pop), sub = NCOL(Bmat$sub))
+    n_terms_pop <- NCOL(Bmat$pop)
+    n_terms_sub <- NCOL(Bmat$sub)
     n_samples <- NROW(Bmat$sub)
     n_pops <- length(unique(grp$pop))
     n_subs <- length(unique(grp$sub))
 
-    idx_pop <- tapply(seq_len(n_samples), grp$pop, function(x) x)
-    idx <- tapply(seq_len(n_samples), grp$sub, function(x) x)
+    para <- list(Kmat = Kmat, dim_sub1 = dim_sub1, rank_K = rank_K,
+                 n_terms_pop = n_terms_pop, n_terms_sub = n_terms_sub,
+                 n_samples = n_samples, n_pops = n_pops, n_subs = n_subs)
+
+    subs_in_pop <- tapply(as.character(grp$sub), grp$pop, unique, simplify = FALSE)
+    idx_pop <- tapply(seq_len(n_samples), grp$pop, function(x) x, simplify = FALSE)
+    idx_sub <- tapply(seq_len(n_samples), grp$sub, function(x) x, simplify = FALSE)
 
     ## some crossproducts precalculation
     ## crossproduct of Bmats (pop x pop, sub x pop, sub x sub)
-    xB_pop <- array(NA, c(n_terms$pop, n_terms$pop, n_subs),
+    xB_pop <- array(NA, c(n_terms_pop, n_terms_pop, n_subs),
                     list(NULL, NULL, levels(grp$sub)))
-    xB_subpop <- array(NA, c(n_terms$sub, n_terms$pop, n_subs),
+    xB_subpop <- array(NA, c(n_terms_sub, n_terms_pop, n_subs),
                        list(NULL, NULL, levels(grp$sub)))
-    xB_sub <- array(NA, c(n_terms$sub, n_terms$sub, n_subs),
+    xB_sub <- array(NA, c(n_terms_sub, n_terms_sub, n_subs),
                     list(NULL, NULL, levels(grp$sub)))
 
-    ## crossproduct of Bmat_pop and y
-    Bxy <- matrix(NA, n_terms$sub, n_subs, dimnames = list(NULL, levels(grp$sub)))
+    ## crossproduct of Bmat and y (Bmat_pop x y, Bmat_sub x y)
+    Bxy_pop <- matrix(NA, n_terms_sub, n_subs, dimnames = list(NULL, levels(grp$sub)))
+    Bxy_sub <- matrix(NA, n_terms_sub, n_subs, dimnames = list(NULL, levels(grp$sub)))
 
     for (i in levels(grp$sub)) {
-        xB_pop[, , i] <- crossprod(Bmat$sub[idx[[i]], ])
-        xB_subpop[, , i] <- crossprod(Bmat$sub[idx[[i]], ], Bmat$pop[idx[[i]], ])
-        xB_sub[, , i] <- crossprod(Bmat$pop[idx[[i]], ])
-        Bxy[, i] <- crossprod(Bmat$pop[idx[[i]], ], y[idx[[i]]])
+        xB_pop[, , i] <- crossprod(Bmat$sub[idx_sub[[i]], ])
+        xB_subpop[, , i] <- crossprod(Bmat$sub[idx_sub[[i]], ], Bmat$pop[idx_sub[[i]], ])
+        xB_sub[, , i] <- crossprod(Bmat$pop[idx_sub[[i]], ])
+        Bxy_pop[, i] <- crossprod(Bmat$pop[idx_sub[[i]], ], y[idx_sub[[i]]])
+        Bxy_sub[, i] <- crossprod(Bmat$sub[idx_sub[[i]], ], y[idx_sub[[i]]])
     }
     xKmat <- crossprod(Kmat)
 
     ## initialise the output list
-    samples <- list(population = array(NA, c(n_terms$sub, n_pops, size),
+    samples <- list(population = array(NA, c(n_terms_sub, n_pops, size),
                                        dimnames = list(NULL, levels(grp$pop))),
-                    subjects = array(NA, c(n_terms$sub, n_subs, size),
+                    subjects = array(NA, c(n_terms_sub, n_subs, size),
                                      dimnames = list(NULL, levels(grp$sub))),
                     precision = list(pop = rep(NA, size),
                                      sub1 = array(NA, c(dim_sub1, dim_sub1, size)),
@@ -107,12 +149,9 @@ bayes_ridge_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, burn, size,
     ## initialise theta with a penalised LS estimate, and delta with rnorms with
     ## small sd
     pls <- tcrossprod(solve(crossprod(Bmat$sub) + xKmat), Bmat$sub) %*% as.vector(y)
-    init <- initialise_with_pls(init, n_terms$sub, grp$sub, pls)
+    ## need to work on initialise_with_pls
+    init <- initialise_with_pls(init, n_terms_sub, grp$sub, pls)
     kcoef <- list(pop = init$pop, sub = init$sub)
-
-    ## initialise some intermediate output
-    BMB <- array(NA, c(n_terms$sub, n_terms$sub, n_subs), list(NULL, NULL, levels(grp$sub)))
-    BMy <- matrix(NA, n_terms$sub, n_subs, dimnames = list(NULL, levels(grp$sub)))
 
     ## initialise prediction contribution by population coefs and subjects deviations
     kcontrib_pop <- Bmat$sub %*% kcoef$pop
@@ -128,34 +167,36 @@ bayes_ridge_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, burn, size,
         kresids <- y - kcontrib_pop - kcontrib_sub
         kprec <- update_prec(kcoef, kresids, para, prior)
 
-        kprec_sub <- block_diag(kprec$sub1, diag(kprec$sub2, n_terms$sub - dim_sub1))
+        kprec$sub <- block_diag(kprec$sub1, diag(kprec$sub2, n_terms_sub - dim_sub1))
 
         ## update theta
-        for (i in levels(grp$sub)) {
-            ## for numerical stability, these steps are simplified
-            xBmat_i <- xBmat_sub[, , i]
-            Li <- xBmat_i + kprec_sub / kprec$eps
-            inv_Li <- chol2inv(chol(Li))
-            BMB[, , i] <- kprec$eps * (diag(n_terms$sub) - xBmat_i %*% inv_Li) %*% xBmat_i
-            ## BMB[, , i] <- kprec$eps * xBmat_i - xBmat_i %*% inv_Li %*% xBmat_i
-
-            Bxy_i <- Bxy_sub[, i]
-            BMy[, i] <- kprec$eps * (Bxy_i - xBmat_i %*% inv_Li %*% Bxy_i)
-            ## BMy[, i] <- kprec$eps * Bxy_i - xBmat_i %*% inv_Li %*% Bxy_i
+        for (l in levels(grp$pop)) {
+            BMB <- array(NA, c(n_terms_pop, n_terms_pop, length(subs_in_pop[[l]])),
+                         list(NULL, NULL, subs_in_pop[[l]]))
+            BMy <- matrix(NA, n_terms_pop, length(subs_in_pop[[l]]),
+                          dimnames = list(NULL, subs_in_pop[[l]]))
+            for (i in subs_in_pop[[l]]) {
+                Li <- xB_sub[, , i] + kprec$sub / kprec$eps
+                inv_Li <- chol2inv(chol(Li))
+                BBLBB_i <- crossprod(xB_subpop[, , i], inv_Li %*% xB_subpop[, , i])
+                BMB[, , i] <- kprec$eps * (xB_pop[, , i] - BBLBB_i)
+                BBLBy_i <- crossprod(xB_subpop[, , i], inv_Li %*% Bxy_sub[, i])
+                BMy[, i] <- kprec$eps * (Bxy_pop[, i] - BBLBy_i)
+            }
+            Phi <- kprec$pop * xKmat + rowSums(BMB, dims = 2)
+            inv_Phi <- chol2inv(chol(Phi))
+            kcoef$pop[, l] <- t(mvtnorm::rmvnorm(1, inv_Phi %*% rowSums(BMy), inv_Phi))
+            kcontrib_pop[idx_pop[[l]]] <- Bmat$pop[idx_pop[[l]], ] %*% kcoef$pop[, l]
         }
-        Phi <- kprec$pop * xKmat + rowSums(BMB, dims = 2)
-        inv_Phi <- chol2inv(chol(Phi))
-        kcoef$pop <- t(mvtnorm::rmvnorm(1, inv_Phi %*% rowSums(BMy), inv_Phi))
-        kcontrib_pop <- Bmat$sub %*% kcoef$pop
 
         ## update delta
         for (i in levels(grp$sub)) {
-            M_sub <- chol2inv(chol(xBmat_sub[, , i] + kprec_sub / kprec$eps))
-            y_star <- y[idx[[i]]] - kcontrib_pop[idx[[i]]]
-            mu <- M_sub %*% crossprod(Bmat$sub[idx[[i]], ], y_star)
+            M_sub <- chol2inv(chol(xB_sub[, , i] + kprec$sub / kprec$eps))
+            y_star <- y[idx_sub[[i]]] - kcontrib_pop[idx_sub[[i]]]
+            mu <- M_sub %*% crossprod(Bmat$sub[idx_sub[[i]], ], y_star)
             sig <- M_sub / kprec$eps
             kcoef$sub[, i] <- t(mvtnorm::rmvnorm(1, mu, sig))
-            kcontrib_sub[idx[[i]]] <- Bmat$sub[idx[[i]], ] %*% kcoef$sub[, i]
+            kcontrib_sub[idx_sub[[i]]] <- Bmat$sub[idx_sub[[i]], ] %*% kcoef$sub[, i]
         }
 
         ## print progress
@@ -169,17 +210,17 @@ bayes_ridge_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, burn, size,
             samples$precision$sub1[, , k] <- kprec$sub1
             samples$precision$sub2[k] <- kprec$sub2
             samples$precision$eps[k] <- kprec$eps
-            samples$population[, k] <- kcoef$pop
+            samples$population[, , k] <- kcoef$pop
             samples$subjects[, , k] <- kcoef$sub
 
-            ## calculate unnormalised log-likelihood
-            kresids <- y - kcontrib_pop - kcontrib_sub
-            samples$ll[k] <- loglike_sub(kprec, kresids, n_samples)
+            ## ## calculate unnormalised log-likelihood
+            ## kresids <- y - kcontrib_pop - kcontrib_sub
+            ## samples$ll[k] <- loglike_sub(kprec, kresids, n_samples)
 
-            ## calculate unnormalised log-posterior
-            para <- list(xKmat = xKmat, rank_K = rank_K, dim_sub1 = dim_sub1)
-            samples$lp[k] <- logprior_sub(kcoef$pop, kcoef$sub, kprec, para, prior) +
-                samples$ll[k]
+            ## ## calculate unnormalised log-posterior
+            ## para <- list(xKmat = xKmat, rank_K = rank_K, dim_sub1 = dim_sub1)
+            ## samples$lp[k] <- logprior_sub(kcoef$pop, kcoef$sub, kprec, para, prior) +
+            ##     samples$ll[k]
         }
     }
     means <- list(population = rowMeans(samples$population),

@@ -240,7 +240,7 @@ check_Bmat <- function(Bmat, Kmat) {
     Bmat
 }
 
-check_prior <- function(prior) {
+check_prior <- function(prior, dim_sub1) {
 
     ## build a prior for covariance if not give
     if (is.null(prior)) {
