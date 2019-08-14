@@ -47,16 +47,26 @@ update_prec <- function(coef, resids, para, prior) {
 }
 
 ## update theta_l
-
 update_theta_l <- function(xB_l, Bxy_l, xKmat, kprec, para) {
 
-    n_terms_pop <- para$n_terms_pop
+    if (dim(xB_l)[3] != NCOL(Bxy_l)) {
+        stop("Inconsistent dimensions of xB_l and Bxy_l.")
+    }
     n_subs_in_pop <- NCOL(Bxy_l)
+    n_terms_pop <- para$n_terms_pop
+
     ## xB_l (list of arrays of relevant xB)
+    if (all(c("pop", "sub", "subpop")) %in% names(xB_l)) {
+        stop("Missing xB_l variables.")
+    }
     xB_sub_l <- xB_l$sub
     xB_pop_l <- xB_l$pop
     xB_subpop_l <- xB_l$subpop
+
     ## Bxy_l (list of matrices of relevant Bxy)
+    if (all(c("pop", "sub")) %in% names(Bxy_l)) {
+        stop("Missing xB_l variables.")
+    }
     Bxy_pop_l <- Bxy_l$pop
     Bxy_sub_l <- Bxy_l$sub
 
@@ -77,13 +87,17 @@ update_theta_l <- function(xB_l, Bxy_l, xKmat, kprec, para) {
 
 
 ## update delta_i
-
-
-
+update_delta_i <- function(Bmat_sub_i, xB_sub_i, kcontrib_pop_i, y_i, kprec, para) {
+    M_sub <- chol2inv(chol(xB_sub_i + kprec$sub / kprec$eps))
+    y_star <- y_i - kcontrib_pop_i
+    mu <- M_sub %*% crossprod(Bmat_sub_i, y_star)
+    sig <- M_sub / kprec$eps
+    t(mvtnorm::rmvnorm(1, mu, sig))
+}
 
 ## This is a Gibbs sampler v2 for longitudinal Bayesian ridge; see thesis.
 ## Update two block of parameters: variance and coefs
-## Requirements: Bmat, y, grp, Kmat, dim_sub1
+## Requirements: Bmat (list), y, grp (list), Kmat, dim_sub1
 ## Algorithms paremeters: burn, size
 ## Extras: verbose
 #' @export
@@ -111,25 +125,8 @@ bayes_ridge_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, burn, size,
     idx_sub <- tapply(seq_len(n_samples), grp$sub, function(x) x, simplify = FALSE)
 
     ## some crossproducts precalculation
-    ## crossproduct of Bmats (pop x pop, sub x pop, sub x sub)
-    xB_pop <- array(NA, c(n_terms_pop, n_terms_pop, n_subs),
-                    list(NULL, NULL, levels(grp$sub)))
-    xB_subpop <- array(NA, c(n_terms_sub, n_terms_pop, n_subs),
-                       list(NULL, NULL, levels(grp$sub)))
-    xB_sub <- array(NA, c(n_terms_sub, n_terms_sub, n_subs),
-                    list(NULL, NULL, levels(grp$sub)))
-
-    ## crossproduct of Bmat and y (Bmat_pop x y, Bmat_sub x y)
-    Bxy_pop <- matrix(NA, n_terms_sub, n_subs, dimnames = list(NULL, levels(grp$sub)))
-    Bxy_sub <- matrix(NA, n_terms_sub, n_subs, dimnames = list(NULL, levels(grp$sub)))
-
-    for (i in levels(grp$sub)) {
-        xB_pop[, , i] <- crossprod(Bmat$sub[idx_sub[[i]], ])
-        xB_subpop[, , i] <- crossprod(Bmat$sub[idx_sub[[i]], ], Bmat$pop[idx_sub[[i]], ])
-        xB_sub[, , i] <- crossprod(Bmat$pop[idx_sub[[i]], ])
-        Bxy_pop[, i] <- crossprod(Bmat$pop[idx_sub[[i]], ], y[idx_sub[[i]]])
-        Bxy_sub[, i] <- crossprod(Bmat$sub[idx_sub[[i]], ], y[idx_sub[[i]]])
-    }
+    xB <- calc_xB(Bmat, idx_sub, para)      # pop x pop, sub x pop, sub x sub
+    Bxy <- calc_Bxy(y, Bmat, idx_sub, para) # Bmat_pop x y, Bmat_sub x y
     xKmat <- crossprod(Kmat)
 
     ## initialise the output list
@@ -144,13 +141,10 @@ bayes_ridge_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, burn, size,
                     lp = rep(NA, size),
                     ll = rep(NA, size))
 
-    ## fix from here on
-
     ## initialise theta with a penalised LS estimate, and delta with rnorms with
     ## small sd
-    pls <- tcrossprod(solve(crossprod(Bmat$sub) + xKmat), Bmat$sub) %*% as.vector(y)
-    ## need to work on initialise_with_pls
-    init <- initialise_with_pls(init, n_terms_sub, grp$sub, pls)
+    pls <- tcrossprod(solve(crossprod(Bmat$pop) + xKmat), Bmat$pop) %*% as.vector(y)
+    init <- initialise_with_pls(init, n_terms_sub, grp, pls)
     kcoef <- list(pop = init$pop, sub = init$sub)
 
     ## initialise prediction contribution by population coefs and subjects deviations
@@ -162,8 +156,6 @@ bayes_ridge_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, burn, size,
 
     for (k in seq.int(-burn + 1, size)) {
         ## update precisions
-        para <- list(Kmat = Kmat, rank_K = rank_K, dim_sub1 = dim_sub1,
-                     n_samples = n_samples, n_subs = n_subs, n_terms = n_terms)
         kresids <- y - kcontrib_pop - kcontrib_sub
         kprec <- update_prec(kcoef, kresids, para, prior)
 
@@ -171,23 +163,16 @@ bayes_ridge_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, burn, size,
 
         ## update theta
         for (l in levels(grp$pop)) {
-            BMB <- array(NA, c(n_terms_pop, n_terms_pop, length(subs_in_pop[[l]])),
-                         list(NULL, NULL, subs_in_pop[[l]]))
-            BMy <- matrix(NA, n_terms_pop, length(subs_in_pop[[l]]),
-                          dimnames = list(NULL, subs_in_pop[[l]]))
-            for (i in subs_in_pop[[l]]) {
-                Li <- xB_sub[, , i] + kprec$sub / kprec$eps
-                inv_Li <- chol2inv(chol(Li))
-                BBLBB_i <- crossprod(xB_subpop[, , i], inv_Li %*% xB_subpop[, , i])
-                BMB[, , i] <- kprec$eps * (xB_pop[, , i] - BBLBB_i)
-                BBLBy_i <- crossprod(xB_subpop[, , i], inv_Li %*% Bxy_sub[, i])
-                BMy[, i] <- kprec$eps * (Bxy_pop[, i] - BBLBy_i)
-            }
-            Phi <- kprec$pop * xKmat + rowSums(BMB, dims = 2)
-            inv_Phi <- chol2inv(chol(Phi))
-            kcoef$pop[, l] <- t(mvtnorm::rmvnorm(1, inv_Phi %*% rowSums(BMy), inv_Phi))
+            xB_l <- list(pop = xB$pop[, , subs_in_pop[[l]]],
+                         sub = xB$sub[, , subs_in_pop[[l]]],
+                         subpop = xB$subpop[, , subs_in_pop[[l]]])
+            Bxy_l <- list(pop = Bxy$pop[, , subs_in_pop[[l]]],
+                          sub = Bxy$sub[, , subs_in_pop[[l]]])
+            kcoef$pop[, l] <- update_theta_l(xB_l, Bxy_l, xKmat, kprec, para)
             kcontrib_pop[idx_pop[[l]]] <- Bmat$pop[idx_pop[[l]], ] %*% kcoef$pop[, l]
         }
+
+        ## fix from here on
 
         ## update delta
         for (i in levels(grp$sub)) {

@@ -45,13 +45,14 @@
 ## initialise theta with a penalised LS estimate, and delta with rnorms with small sd
 initialise_with_pls <- function(init, n_terms, grp, pls) {
     ## init: NULL or list(pop, sub); any of the element can be NULL
-    n_subs <- length(unique(grp))
 
+    n_pops <- length(unique(grp$pop))
+    n_subs <- length(unique(grp$sub))
     if (is.null(init$pop)) {
-        init$pop <- pls
+        init$pop <- matrix(pls, n_terms, n_pops)
     } else {
-        if (length(init$pop) == n_terms) {
-            init$pop <- as.vector(init$pop)
+        if (dim(init$sub) == c(n_terms, n_pops)) {
+            init$pop <- as.matrix(init$sub)
             cat("Population initial values supplied.\n")
         } else {
             stop("Invalid dimension of population initial values.")
@@ -59,15 +60,15 @@ initialise_with_pls <- function(init, n_terms, grp, pls) {
     }
     if (is.null(init$sub)) {
         init$sub <- matrix(rnorm(n_terms * n_subs) * 0.01, n_terms, n_subs,
-                           dimnames = list(NULL, levels(grp)))
+                           dimnames = list(NULL, levels(grp$sub)))
     } else {
         if (dim(init$sub) == c(n_terms, n_subs)) {
             init$sub <- as.matrix(init$sub)
             cat("Subjects initial values supplied.\n")
             if (is.null(colnames(init$sub))) {
-                colnames(init$sub) <- levels(grp)
+                colnames(init$sub) <- levels(grp$sub)
             } else {
-                init$sub <- init$sub[, levels(grp)]
+                init$sub <- init$sub[, levels(grp$sub)]
             }
         } else {
             stop("Invalid dimension of subject initial values.")
@@ -198,7 +199,7 @@ initialise_with_Amat <- function(init, n_terms, grp, Amat) {
 check_grp <- function(grp) {
 
     ## check grp field names
-    if (c("pop", "sub") %in% names(grp)) {
+    if (all(c("pop", "sub") %in% names(grp))) {
         stop("Missing grp variables.")
     }
 
@@ -224,7 +225,7 @@ check_grp <- function(grp) {
 check_Bmat <- function(Bmat, Kmat) {
 
     ## check grp field names
-    if (c("pop", "sub") %in% names(Bmat)) {
+    if (all(c("pop", "sub") %in% names(Bmat))) {
         stop("Missing Bmat variables.")
     }
 
@@ -259,6 +260,48 @@ check_prior <- function(prior, dim_sub1) {
     }
     prior
 }
+
+calc_xB <- function(Bmat, idx_sub, para) {
+
+    ## crossproduct of Bmats (pop x pop, sub x pop, sub x sub)
+    n_subs <- para$n_subs
+    n_terms_pop <- para$n_terms_pop
+    n_terms_sub <- para$n_terms_sub
+
+    xB_pop <- array(NA, c(n_terms_pop, n_terms_pop, n_subs),
+                    list(NULL, NULL, names(idx_sub)))
+    xB_subpop <- array(NA, c(n_terms_sub, n_terms_pop, n_subs),
+                       list(NULL, NULL, names(idx_sub)))
+    xB_sub <- array(NA, c(n_terms_sub, n_terms_sub, n_subs),
+                    list(NULL, NULL, names(idx_sub)))
+
+    for (i in names(idx_sub)) {
+        xB_pop[, , i] <- crossprod(Bmat$sub[idx_sub[[i]], ])
+        xB_subpop[, , i] <- crossprod(Bmat$sub[idx_sub[[i]], ], Bmat$pop[idx_sub[[i]], ])
+        xB_sub[, , i] <- crossprod(Bmat$pop[idx_sub[[i]], ])
+    }
+    list(pop = xB_pop, subpop = xB_subpop, sub = xB_sub)
+}
+
+calc_Bxy <- function(y, Bmat, idx_sub, para) {
+
+    n_terms_sub <- para$n_terms_sub
+    n_subs <- para$n_subs
+
+    ## crossproduct of Bmat and y (Bmat_pop x y, Bmat_sub x y)
+    Bxy_pop <- matrix(NA, n_terms_sub, n_subs, dimnames = list(NULL, names(idx_sub)))
+    Bxy_sub <- matrix(NA, n_terms_sub, n_subs, dimnames = list(NULL, names(idx_sub)))
+
+    for (i in names(idx_sub)) {
+        Bxy_pop[, i] <- crossprod(Bmat$pop[idx_sub[[i]], ], y[idx_sub[[i]]])
+        Bxy_sub[, i] <- crossprod(Bmat$sub[idx_sub[[i]], ], y[idx_sub[[i]]])
+    }
+    list(pop = Bxy_pop, sub = Bxy_sub)
+}
+
+
+
+
 
 
 
