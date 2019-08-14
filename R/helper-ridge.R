@@ -44,12 +44,12 @@
 
 ## initialise theta with a penalised LS estimate, and delta with rnorms with small sd
 initialise_with_pls <- function(init, n_terms, grp, pls) {
-    ## init: NULL or list(pop, sub); any of the element can be NULL
 
+    ## init: NULL or list(pop, sub); any of the element can be NULL
     n_pops <- length(unique(grp$pop))
     n_subs <- length(unique(grp$sub))
     if (is.null(init$pop)) {
-        init$pop <- matrix(pls, n_terms, n_pops)
+        init$pop <- matrix(pls, n_terms, n_pops, dimnames = list(NULL, levels(grp$pop)))
     } else {
         if (dim(init$sub) == c(n_terms, n_pops)) {
             init$pop <- as.matrix(init$sub)

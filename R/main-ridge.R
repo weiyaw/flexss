@@ -148,10 +148,13 @@ bayes_ridge_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, burn, size,
     kcoef <- list(pop = init$pop, sub = init$sub)
 
     ## initialise prediction contribution by population coefs and subjects deviations
-    kcontrib_pop <- Bmat$sub %*% kcoef$pop
+    kcontrib_pop <- rep(NA, n_samples)
+    for (l in levels(grp$pop)) {
+        kcontrib_pop[idx_pop[[l]]] <- Bmat$pop[idx_pop[[l]], ] %*% kcoef$pop[, l]
+    }
     kcontrib_sub <- rep(NA, n_samples)
     for (i in levels(grp$sub)) {
-        kcontrib_sub[idx[[i]]] <- Bmat$sub[idx[[i]], ] %*% kcoef$sub[, i]
+        kcontrib_sub[idx_sub[[i]]] <- Bmat$sub[idx_sub[[i]], ] %*% kcoef$sub[, i]
     }
 
     for (k in seq.int(-burn + 1, size)) {
