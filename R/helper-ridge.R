@@ -1,4 +1,4 @@
- block_diag <- function(..., size = NULL) {
+block_diag <- function(..., size = NULL) {
 
     ## Construct a big matrix with its diagonal elements the matrices provided
     ## in "A". If "A" is a matrix, the function returns a matrix with "size" of
@@ -57,7 +57,7 @@ initialise_with_Amat <- function(init, n_terms, grp, Amat) {
     } else {
         if (length(init$pop) == n_terms) {
             init$pop <- as.vector(init$pop)
-            cat("Population initial values supplied.\n")
+            message("Population initial values supplied.")
         } else {
             stop("Invalid dimension of population initial values.")
         }
@@ -74,7 +74,7 @@ initialise_with_Amat <- function(init, n_terms, grp, Amat) {
     } else {
         if (dim(init$sub) == c(n_terms, n_subs)) {
             init$sub <- as.matrix(init$sub)
-            cat("Subjects initial values supplied.\n")
+            message("Subjects initial values supplied.")
             if (is.null(colnames(init$sub))) {
                 colnames(init$sub) <- levels(grp)
             } else {
@@ -116,6 +116,123 @@ initialise_samples <- function(para, size, dim_sub1, grp) {
 }
 
 
+#' Construct a difference matrix
+#'
+#' \code{get_diff_mat} returns a difference matrix of an arbitrary order and size.
+#'
+#' This function returns a \eqn{k^{th}} order difference matrix \eqn{D}, such
+#' that \eqn{Dx} gives a vector of \eqn{k^{th}} order differences of \eqn{x}.
+#' The parameter \code{size} is usually the dimension of \eqn{x}.
+#'
+#' @param size the column size of the difference matrix. Required.
+#'
+#' @param k the order of difference. Required.
+#'
+#' @return A \code{size - k} by \code{size} matrix.
+
+get_diff_mat <- function(size, k) {
+    if (size <= k) {
+        stop("Order of difference greater than column size.")
+    }
+
+    D <- diag(1, size)
+    D[(col(D) + 1) == row(D)] <- -1
+    D <- D[-1, ]
+    if (k == 1) {
+        return(D)
+    } else {
+        return(get_diff_mat(size - 1, k - 1) %*% D)
+    }
+}
+
+
+#' Construct an equidistant B-splines design matrix
+#'
+#' \code{get_design_bs} returns an equidistant B-splines design matrix without
+#' explicitly specifying the location of the knots.
+#'
+#' The knots locations are the minimum and maximum of \code{x}, and \code{K}
+#' equidistant points between these two extrema. The B-splines are equidistant,
+#' i.e. no multiple knots at both ends of \eqn{x}. This function uses
+#' \code{splines::splineDesign}.
+#'
+#' @param x predictor vector. Required.
+#' @param K number of inner knots, or a vector of all knots (interior,
+#'     boundaries, and knots outside extrema). Required.
+#' @param deg the degree of polynomial which the B-splines span. Required.
+#' @param EPS tolerance error.
+#'
+#' @return a list with components `design' (\code{length(x)} by \code{K + deg +
+#'     1} design matrix) and all `knots' (interior and boundaries knots, and
+#'     knots outside extrema).
+get_design_bs <- function(x, K, deg, EPS = 1e-6) {
+    res <- list()
+
+    ## get the knots
+    if (length(K) == 1 && is.numeric(K)) {
+        dist <- diff(range(x)) / (K + 1)
+        knots <- seq(min(x) - (deg * dist) - EPS, max(x) + (deg * dist) + EPS,
+                     len = K + 2 * (deg + 1))
+        names(knots) <- NULL
+        res$knots <- knots
+    } else if (is.vector(K) && is.numeric(K)) {
+        knots <- K
+        res$knots <- knots
+    } else {
+        stop("Supplied knots must a numeric vector.")
+    }
+    names(knots) <- NULL
+
+    res$design <- splines::splineDesign(knots, x, ord = deg + 1)
+    res$knots <- knots
+    res
+}
+
+
+## Return a design matrix at quartile (or supplied) knots, and all knots.
+## The knots are taken at the quartiles, and min and max of x.
+## x: all the explanatory data
+## K: number of inner knots, or a vector of all knots (including extrema)
+## deg: degree of the spline polynomial
+get_design_tpf <- function(x, K, deg) {
+
+    res <- list()
+
+    ## get the inner knots
+    if (length(K) == 1 && is.numeric(K)) {
+        res$knots <- unname(quantile(unique(x), seq(0, 1, len = K + 2)))
+        ## res$knots <- unname(seq(min(x), max(x), length.out = K + 2))
+        knots <- res$knots[-c(1, K + 2)]
+    } else if (is.vector(K) && is.numeric(K)) {
+        knots <- K[-c(1, length(K))]
+        res$knots <- K
+    } else {
+        stop("Supplied knots must a numeric vector.")
+    }
+    names(knots) <- NULL
+
+    ## get the design matrix
+    splines <- outer(x, knots, `-`)
+
+    ## this chunck can be generalised to higher degree polynomials
+    if (deg > 0 && deg < 4) {
+        splines <- splines^deg * (splines > 0)
+        res$design <- cbind(1, poly(x, degree = deg, raw = TRUE, simple = TRUE),
+                            splines, deparse.level = 0)
+        colnames(res$design) <- NULL
+    } else {
+        stop("Invalid degree.")
+    }
+    res
+}
+
+
+## Get a penalised least squares estimate with a given response, design matrix
+## and penalty matrix.
+get_pls <- function(response, design, penalty) {
+    inv_term <- chol2inv(chol(crossprod(design) + crossprod(penalty)))
+    tcrossprod(inv_term, design) %*% as.vector(response)
+}
 
 
 

@@ -122,6 +122,7 @@ check_grp <- function(grp) {
 
 }
 
+## Bmat is a list, Kmat is a matrix
 check_Bmat <- function(Bmat, Kmat) {
 
     ## check grp field names
@@ -141,6 +142,7 @@ check_Bmat <- function(Bmat, Kmat) {
     Bmat
 }
 
+## prior is a list, dim_sub1 is an integer
 check_prior <- function(prior, dim_sub1) {
 
     ## build a prior for covariance if not give
@@ -161,6 +163,7 @@ check_prior <- function(prior, dim_sub1) {
     prior
 }
 
+## Bmat, idx_sub and para are lists
 calc_xB <- function(Bmat, idx_sub, para) {
 
     ## crossproduct of Bmats (pop x pop, sub x pop, sub x sub)
@@ -183,6 +186,7 @@ calc_xB <- function(Bmat, idx_sub, para) {
     list(pop = xB_pop, subpop = xB_subpop, sub = xB_sub)
 }
 
+## y is a vector, Bmat, idx_sub and para are lists
 calc_Bxy <- function(y, Bmat, idx_sub, para) {
 
     n_terms_pop <- para$n_terms_pop
@@ -199,9 +203,6 @@ calc_Bxy <- function(y, Bmat, idx_sub, para) {
     }
     list(pop = Bxy_pop, sub = Bxy_sub)
 }
-
-
-
 
 ## update precision
 update_prec <- function(coef, resids, para, prior) {
@@ -332,8 +333,7 @@ bayes_ridge_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, burn, size,
 
     ## initialise theta with a penalised LS estimate, and delta with rnorms with
     ## small sd
-    pls <- tcrossprod(solve(crossprod(Bmat$pop) + xKmat), Bmat$pop) %*% as.vector(y)
-    init <- initialise_with_pls(init, para, grp, pls)
+    init <- initialise_with_pls(init, para, grp, get_pls(y, Bmat$pop, Kmat))
     kcoef <- list(pop = init$pop, sub = init$sub)
 
     ## initialise prediction contribution by population coefs and subjects deviations
