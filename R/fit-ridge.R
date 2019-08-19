@@ -17,11 +17,10 @@ check_data_K <- function(data, K) {
 
 
 #' @export
-fit_tpf_splines <- function(data, K, deg, size, burn, init = NULL,
-                            prior = NULL, verbose = FALSE) {
+fit_tpf_splines <- function(data, K, deg, size, burn, init = NULL, prior = NULL) {
 
     check_data_K(data, K)
-    if (!("pop" %in% names(data))) data$pop <- "dummy"
+    if (!("pop" %in% names(data))) data$pop <- "dme__"
 
     ## design matrix for population curves
     des_info_pop <- get_design_tpf(data$x, K$pop, deg)
@@ -34,7 +33,7 @@ fit_tpf_splines <- function(data, K, deg, size, burn, init = NULL,
 
     fm <- bayes_ridge_sub_v2(y = data$y, grp = list(pop = data$pop, sub = data$sub),
                              Bmat = Bmat, Kmat = Kmat, dim_sub1 = deg + 1, burn = burn,
-                             size = size, init = init, prior = prior, verbose = verbose)
+                             size = size, init = init, prior = prior)
 
     fm$basis <- list(pop = NA, sub = NA)
     fm$basis$pop <- list(type = 'tpf', knots = des_info_pop$knots, degree = deg)
@@ -78,12 +77,11 @@ fit_tpf_splines <- function(data, K, deg, size, burn, init = NULL,
 #' @return A list with posterior means, samples and information of the basis
 #'     functions.
 #'
-#' @importFrom ggplot2 aes_ geom_point geom_line
 fit_bs_splines <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
-                           prior = NULL, verbose = FALSE) {
+                           prior = NULL) {
 
     check_data_K(data, K)
-    if (is.null(data$pop)) data$pop <- "dummy"
+    if (!("pop" %in% names(data))) data$pop <- "dme__"
 
     n_bsf_pop <- K$pop + deg + 1    # number of basis functions
     D <- get_diff_mat(n_bsf_pop, deg + 1) # difference matrix
@@ -108,7 +106,7 @@ fit_bs_splines <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
 
     fm <- bayes_ridge_sub_v2(y = data$y, grp = list(pop = data$pop, sub = data$sub),
                              Bmat = Bmat, Kmat = Kmat, dim_sub1 = deg + 1, burn = burn,
-                             size = size, init = init, prior = prior, verbose = verbose)
+                             size = size, init = init, prior = prior)
 
     fm$basis <- list(pop = NA, sub = NA)
     if (ridge) {

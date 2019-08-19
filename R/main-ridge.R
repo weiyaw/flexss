@@ -13,7 +13,12 @@ initialise_with_pls <- function(init, para, grp, pls) {
     } else {
         if (all(dim(init$pop) == c(n_terms_pop, n_pops))) {
             init$pop <- as.matrix(init$pop)
-            cat("Population initial values supplied.\n")
+            message("Population initial values supplied.")
+            if (is.null(colnames(init$pop))) {
+                colnames(init$pop) <- levels(grp$pop)
+            } else {
+                init$pop <- init$pop[, levels(grp$pop)]
+            }
         } else {
             stop("Invalid dimension of population initial values.")
         }
@@ -24,7 +29,7 @@ initialise_with_pls <- function(init, para, grp, pls) {
     } else {
         if (all(dim(init$sub) == c(n_terms_sub, n_subs))) {
             init$sub <- as.matrix(init$sub)
-            cat("Subjects initial values supplied.\n")
+            message("Subjects initial values supplied.")
             if (is.null(colnames(init$sub))) {
                 colnames(init$sub) <- levels(grp$sub)
             } else {
@@ -116,10 +121,8 @@ check_grp <- function(grp) {
     if (length(unlist(sublvl_in_pop)) > length(unique(grp$sub))) {
         stop("Each subject can only appear in one population.")
     }
-
     grp <- lapply(grp, factor)
     lapply(grp, droplevels)
-
 }
 
 ## Bmat is a list, Kmat is a matrix
@@ -139,7 +142,6 @@ check_Bmat <- function(Bmat, Kmat) {
     if (NCOL(Bmat$pop) != NCOL(Kmat)) {
         stop("Inconsistant columns of Bmat and Kmat.")
     }
-    Bmat
 }
 
 ## prior is a list, dim_sub1 is an integer
@@ -301,14 +303,14 @@ update_delta_i <- function(Bmat_sub_i, xB_sub_i, y_star_i, kprec, para) {
 ## Update two block of parameters: variance and coefs
 ## Requirements: Bmat (list), y, grp (list), Kmat, dim_sub1
 ## Algorithms paremeters: burn, size
-## Extras: verbose
+## Extras: init (list of matrices with 'pop' and 'sub'), prior (see 'check_prior')
 #' @export
 bayes_ridge_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, burn, size,
-                               init = NULL, prior = NULL, verbose = TRUE) {
+                               init = NULL, prior = NULL) {
 
     grp <- check_grp(grp)
-    Bmat <- check_Bmat(Bmat, Kmat)
     prior <- check_prior(prior, dim_sub1)
+    check_Bmat(Bmat, Kmat)
 
     ## some precalculation
     rank_K <- NROW(Kmat)
@@ -376,8 +378,8 @@ bayes_ridge_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, burn, size,
         }
 
         ## print progress
-        if (verbose && (k %% 1000 == 0)) {
-            cat(k, " samples generated.\n")
+        if (k %% 1000 == 0) {
+            message(k, " samples generated.")
         }
 
         ## fix from here on
@@ -412,12 +414,10 @@ bayes_ridge_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, burn, size,
 ## Assumption: Full row rank for Amat.
 ## Requirements: Bmat, y, grp, Kmat, dim_sub1, Amat
 ## Algorithms paremeters: burn, size
-## Extras: verbose
 
 #' @export
 bayes_ridge_cons_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, Amat, burn, size,
-                                    init = NULL, prior = NULL, prec = NULL,
-                                    verbose = TRUE) {
+                                    init = NULL, prior = NULL, prec = NULL) {
 
     ## hyperparemeters for priors
     if (is.null(prior)) {
@@ -526,8 +526,8 @@ bayes_ridge_cons_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, Amat, burn, si
         }
 
         ## print progress
-        if (verbose && (k %% 1000 == 0)) {
-            cat(k, " samples generated.\n")
+        if (k %% 1000 == 0) {
+            message(k, " samples generated.")
         }
 
         ## store samples after burn-in iterations
