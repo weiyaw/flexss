@@ -257,7 +257,7 @@ update_prec <- function(coef, resids, para, prior) {
 ## update theta_l
 update_theta_l <- function(xB_l, Bxy_l, xKmat, kprec, para) {
 
-    n_subs_in_pop <- NCOL(Bxy_l)
+    n_subs_in_pop <- NCOL(Bxy_l$pop)
     n_terms_pop <- para$n_terms_pop
 
     ## xB_l (list of arrays of relevant xB)
@@ -402,7 +402,7 @@ bayes_ridge_sub_v2 <- function(y, grp, Bmat, Kmat, dim_sub1, burn, size,
             ##     samples$ll[k]
         }
     }
-    means <- list(population = rowMeans(samples$population),
+    means <- list(population = rowMeans(samples$population, dims = 2),
                   subjects = rowMeans(samples$subjects, dims = 2))
     list(means = means, samples = samples)
 }

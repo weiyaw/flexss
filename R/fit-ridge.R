@@ -77,32 +77,36 @@ fit_tpf_splines <- function(data, K, deg, size, burn, init = NULL, prior = NULL)
 #' @return A list with posterior means, samples and information of the basis
 #'     functions.
 #'
+#' @importFrom magrittr %>%
+#' @export
 fit_bs_splines <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
                            prior = NULL) {
 
     check_data_K(data, K)
     if (!("pop" %in% names(data))) data$pop <- "dme__"
 
-    n_bsf_pop <- K$pop + deg + 1    # number of basis functions
-    D <- get_diff_mat(n_bsf_pop, deg + 1) # difference matrix
 
     ## design matrix for population curves
     des_info_pop <- get_design_bs(data$x, K$pop, deg)
+    des_info_sub <- get_design_bs(data$x, K$sub, deg)
     if (ridge) {
         ## ridge regression
-        Bmat <- list(pop = des_info_pop$design)
-        Kmat <- D
+        Bmat <- list(pop = des_info_pop$design, sub = des_info_sub$design)
+        Kmat <- get_diff_mat(K$pop + deg + 1, deg + 1) # difference matrix
     } else {
         ## LMM
-        Tmat <- cbind(-1/sqrt(n_bsf_pop), poly(1:n_bsf_pop, deg = deg, raw = FALSE),
-                      crossprod(D, solve(tcrossprod(D))))
-        Bmat <- list(pop = des_info_pop$design %*% Tmat)
+        n_bsf_pop <- K$pop + deg + 1    # number of basis functions
+        n_bsf_sub <- K$sub + deg + 1    # number of basis functions
+        D_pop <- get_diff_mat(K$pop + deg + 1, deg + 1) # difference matrix
+        D_sub <- get_diff_mat(K$sub + deg + 1, deg + 1) # difference matrix
+        Tmat_pop <- cbind(-1/sqrt(n_bsf_pop), poly(1:n_bsf_pop, deg = deg, raw = FALSE),
+                          crossprod(D_pop, solve(tcrossprod(D_pop))))
+        Tmat_sub <- cbind(-1/sqrt(n_bsf_sub), poly(1:n_bsf_sub, deg = deg, raw = FALSE),
+                          crossprod(D_sub, solve(tcrossprod(D_sub))))
+        Bmat <- list(pop = des_info_pop$design %*% Tmat_pop,
+                     sub = des_info_sub$design %*% Tmat_sub)
         Kmat <- cbind(matrix(0, K$pop, deg + 1), diag(K$pop))
     }
-
-    ## design matrix for subject-specific curves
-    des_info_sub <- get_design_bs(data$x, K$sub, deg)
-    Bmat$sub <- des_info_sub$design
 
     fm <- bayes_ridge_sub_v2(y = data$y, grp = list(pop = data$pop, sub = data$sub),
                              Bmat = Bmat, Kmat = Kmat, dim_sub1 = deg + 1, burn = burn,
@@ -113,12 +117,13 @@ fit_bs_splines <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
         fm$basis$pop <- list(type = 'bs-ridge', knots = des_info_pop$knots, degree = deg)
         fm$basis$sub <- list(type = 'bs-ridge', knots = des_info_sub$knots, degree = deg)
     } else {
-        fm$basis$pop <- list(type = 'bs', trans_mat = Tmat, knots = des_info_pop$knots,
+        fm$basis$pop <- list(type = 'bs', trans_mat = Tmat_pop, knots = des_info_pop$knots,
                              degree = deg)
-        fm$basis$sub <- list(type = 'bs', trans_mat = Tmat, knots = des_info_sub$knots,
+        fm$basis$sub <- list(type = 'bs', trans_mat = Tmat_sub, knots = des_info_sub$knots,
                              degree = deg)
     }
-    fm$data <- dplyr::select(data, x, y, sub, pop)
+    fm$data <- dplyr::select(data, x, y, sub, pop) %>%
+        dplyr::mutate(sub = as.factor(sub), pop = as.factor(pop))
     fm
 }
 
