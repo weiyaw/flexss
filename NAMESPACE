@@ -2,6 +2,8 @@
 
 export(bayes_ridge_cons_sub_v2)
 export(bayes_ridge_sub_v2)
+export(fit_bs_splines)
+export(fit_tpf_splines)
 importFrom(ggplot2,aes_)
 importFrom(ggplot2,geom_line)
 importFrom(ggplot2,geom_point)
