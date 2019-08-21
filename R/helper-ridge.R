@@ -234,6 +234,31 @@ get_pls <- function(response, design, penalty) {
     tcrossprod(inv_term, design) %*% as.vector(response)
 }
 
+## get the maximum-a-posteriori or maximum likelihood estimate from the model
+get_max <- function(fm, type = "map") {
+    if (type == "map") {
+        if (is.null(fm$samples$lp)) {
+            stop("Log-posterior not available.")
+        } else {
+            idx <- which.max(fm$samples$lp)
+        }
+    } else if (type == "mle") {
+        if (is.null(fm$samples$ll)) {
+            stop("Log-likelihood not available.")
+        } else {
+            idx <- which.max(fm$samples$ll)
+        }
+    } else {
+        stop("Unknown type in get_max.")
+    }
+    list(population = fm$samples$population[, idx],
+         subjects = fm$samples$subjects[, , idx],
+         precision = list(pop = fm$samples$precision$pop[idx],
+                          sub1 = fm$samples$precision$sub1[, , idx],
+                          sub2 = fm$samples$precision$sub2[idx],
+                          eps = fm$samples$precision$eps[idx]))
+}
+
 
 
 
