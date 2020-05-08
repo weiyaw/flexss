@@ -6,6 +6,55 @@ check_Kmat <- function(Kmat) {
   }
 }
 
+check_prec_beta <- function(prec_beta, dim_beta) {
+  if (!is.null(prec$beta)) {
+    message('prec$beta specified.')
+    stopifnot(is.matrix(prec$beta),
+              dim(prec$beta) == para$dim_beta,
+              is_precision(prec$beta))
+  }
+}
+check_prec <- function(prec, para) {
+  ## display specified precision
+  if (!is.null(prec$theta)) {
+    message('prec$theta specified.')
+    stopifnot(is.matrix(prec$theta),
+              dim(prec$theta) == para$dim_theta,
+              is_precision(prec$theta))
+  }
+
+  if (!is.null(prec$delta)) {
+    message('prec$delta specified.')
+    stopifnot(is.matrix(prec$delta),
+              dim(prec$delta) == para$dim_delta,
+              is_precision(prec$delta))
+  }
+
+  if (!is.null(prec$beta)) {
+    if (is.null(para$dim_beta)) {
+      message("prec$beta specified but irrelavent. No fixed/random effects.")
+    } else {
+      message('prec$beta specified.')
+      stopifnot(is.matrix(prec$beta),
+                dim(prec$beta) == para$dim_beta,
+                is_precision(prec$beta))
+    }
+  }
+
+  if (!is.null(prec$eps)) {
+    message('prec$eps specified.')
+    stopifnot(is.numeric(prec$eps),
+              length(prec$eps) == 1,
+              prec$eps > 0)
+  }
+}
+
+## is this a precision matrix (in the context of this model)? The precision can
+## be semi-positive definite.
+is_precision <- function(x) {
+  all(isSymmetric(x), eigen(x, TRUE)$values >= 0)
+}
+
 init_theta <- function(theta, pop_names, dim_theta, n_pops, pls) {
 
   ## use pls if initial values not supplied
@@ -53,7 +102,9 @@ init_delta <- function(delta, sub_names, dim_delta, n_subs) {
 init_beta <- function(beta, beta_names, dim_beta) {
   
   ## use Gaussian rv if initial values not supplied
-  if (is.null(beta)) {
+  if (is.null(dim_beta)) {
+    return(NULL)
+  } else if (is.null(beta)) {
     beta <- rnorm(dim_beta) * 0.01
   } else {
     message("Initial beta supplied.")
@@ -86,7 +137,7 @@ init_yhat <- function(datals, theta, delta, beta, pop_of_subs, debug = FALSE) {
   }
   f_init <- purrr::map2(datals$Bmat_pop, pop_of_subs, ~.x %*% theta[, .y])
   g_init <- purrr::imap(datals$Bmat_sub, ~.x %*% delta[, .y])
-  calc_yhat(f_init, g_init, datals$Xmat, beta)
+  update_yhat(f_init, g_init, datals$Xmat, beta)
 }
 
 ## initialise theta with a penalised LS estimate, and delta with rnorms with small sd
@@ -106,28 +157,51 @@ initialise_with_pls_v3 <- function(init, para, pls, datals, debug = FALSE) {
   list(theta = theta, delta = delta, beta = beta, yhat = yhat)
 }
 
+calc_xX <- function(Xmat) {
+  if (is.null(Xmat)) {
+    NULL
+  } else {
+    purrr::map(Xmat, crossprod)
+  }
+}
 
 ## return: list of length n_sub
 calc_Lmat <- function(xX, kprec, n_subs) {
-  purrr::map(xX, ~.x + kprec$beta / (n_subs * kprec$eps))
+  if (is.null(xX)) {
+    NULL
+  } else if (all(kprec$beta == 0)) {
+    xX
+  } else {
+    purrr::map(xX, ~.x + kprec$beta / (n_subs * kprec$eps))
+  }
 }
 
 ## return: list of length n_sub
 calc_Mmat <- function(y, f, g, Xmat) {
-  purrr::pmap(list(y, f, g, Xmat), ~crossprod(..1 - ..2 - ..3, ..4))
-}
-
-## return: list of length n_sub
-calc_Phi <- function(Xmat, Lmat) {
-  calc_Phi_i <- function(Xmat_i, Lmat_i) {
-    dim_Phi <- NROW(Xmat_i)
-    Lmat_i_inv <- chol2inv(chol(Lmat_i)) # L_i > 0
-    diag(dim_Phi) - tcrossprod(Xmat_i %*% Lmat_i_inv, Xmat_i)
+  if (is.null(Xmat)) {
+    NULL
+  } else {
+    purrr::pmap(list(y, f, g, Xmat), ~crossprod(..1 - ..2 - ..3, ..4))
   }
-  purrr::map2(Xmat, Lmat, calc_Phi_i)
 }
 
 ## return: list of length n_sub
+## if Xmat is NULL (i.e. no beta term), y must be provided
+calc_Phi <- function(Xmat, Lmat, y = NULL) {
+  if (is.null(Xmat)) {
+    stopifnot(!is.null(y))
+    purrr::map(y, ~diag(length(.x)))
+  } else {
+    calc_Phi_i <- function(Xmat_i, Lmat_i) {
+      dim_Phi <- NROW(Xmat_i)
+      Lmat_i_inv <- chol2inv(chol(Lmat_i)) # L_i > 0
+      diag(dim_Phi) - tcrossprod(Xmat_i %*% Lmat_i_inv, Xmat_i)
+    }
+    purrr::map2(Xmat, Lmat, calc_Phi_i)
+  }
+}
+
+  ## return: list of length n_sub
 calc_PhixBs <- function(Phi, Bmat_sub) {
   purrr::map2(Phi, Bmat_sub, `%*%`) # Phi_i is symmetrical
 }
@@ -148,7 +222,7 @@ calc_Pmat <- function(y, f, PhixBs) {
 
 ## return: list of length n_sub
 calc_Psy <- function(Phi, PhixBs, Nmat_inv) {
- calc_Psy_i <- function(Phi_i, PhixBs_i, Nmat_i_inv) {
+  calc_Psy_i <- function(Phi_i, PhixBs_i, Nmat_i_inv) {
     Phi_i - tcrossprod(PhixBs_i %*% Nmat_i_inv, PhixBs_i) # Phi_i == t(Phi_i)
   }
   purrr::pmap(list(Phi, PhixBs, Nmat_inv), calc_Psy_i)
@@ -203,12 +277,6 @@ calc_g <- function(Bmat_sub, delta, debug = FALSE) {
   purrr::map2(Bmat_sub, delta, `%*%`)
 }
 
-## beta: a vector / column vector of length = NCOL(Xmat)
-## the rest of args: list of column vectors/matrix, length = n_subs
-calc_yhat <- function(f, g, Xmat, beta) {
-  purrr::pmap(list(f, g, Xmat), ~..1 + ..2 + ..3 %*% beta)
-}
-
 ## return: a list of length n_pop
 update_theta <- function(Bmat_pop, PsyxB, y, subs_in_pop, kprec) {
   Qmat_inv <- calc_Qmat_inv(Bmat_pop, PsyxB, subs_in_pop, kprec)
@@ -216,7 +284,7 @@ update_theta <- function(Bmat_pop, PsyxB, y, subs_in_pop, kprec) {
   mu_theta <- purrr::map2(Qmat_inv, Rmat, tcrossprod)
   purrr::map2(mu_theta, Qmat_inv, ~t(mvtnorm::rmvnorm(1, .x, .y / kprec$eps)))
 }
-  
+
 ## return: a list of length n_sub
 update_delta <- function(Nmat_inv, PhixBs, y, f, kprec) {
   Pmat <- calc_Pmat(y, f, PhixBs)                # y, f
@@ -226,13 +294,30 @@ update_delta <- function(Nmat_inv, PhixBs, y, f, kprec) {
 
 ## return: a column vector
 update_beta <- function(Lmat, Mmat, y, f, g, kprec) {
-  Lmat_sum <- purrr::reduce(Lmat, `+`)
-  Lmat_sum_inv <- chol2inv(chol(Lmat_sum))
-  Mmat_sum <- purrr::reduce(Mmat, `+`)
-  mu_beta <- tcrossprod(Lmat_sum_inv, Mmat_sum)
-  Sig_beta <- Lmat_sum_inv / kprec$eps
-  t(mvtnorm::rmvnorm(1, mu_beta, Sig_beta))
+  if (is.null(Lmat) || is.null(Mmat)) {
+    NULL
+  } else {
+    Lmat_sum <- purrr::reduce(Lmat, `+`)
+    Lmat_sum_inv <- chol2inv(chol(Lmat_sum))
+    Mmat_sum <- purrr::reduce(Mmat, `+`)
+    mu_beta <- tcrossprod(Lmat_sum_inv, Mmat_sum)
+    Sig_beta <- Lmat_sum_inv / kprec$eps
+    t(mvtnorm::rmvnorm(1, mu_beta, Sig_beta))
+  }
 }
+## beta: a vector / column vector of length = NCOL(Xmat)
+## the rest of args: list of column vectors/matrix, length = n_subs
+## return a column vector (not numeric vector)
+update_yhat <- function(f, g, Xmat, beta) {
+  if (is.null(Xmat)) {
+    unlist(f) + unlist(g)
+  } else {
+    tall_Xmat <- do.call(rbind, Xmat)
+    unlist(f) + unlist(g) + tall_Xmat %*% beta
+  }
+  ## unlist(purrr::pmap(list(f, g, Xmat), ~..1 + ..2 + ..3 %*% beta))
+}
+
 
 ## datals (list of lists): Bmat_pop, Bmat_sub, Xmat, y
 ## xX (list)
@@ -250,26 +335,26 @@ update_coefs <- function(datals, xX, para, kprec, debug = FALSE) {
 
   ## some pre-calculation
   Lmat <- calc_Lmat(xX, kprec, para$n_subs)
-  Phi <- calc_Phi(datals$Xmat, Lmat)
-  PhixBs <- calc_PhixBs(Phi, datals$Bmat_sub)
+  Phi <- calc_Phi(datals$Xmat, Lmat, datals$y)
+  PhixBs <- purrr::map2(Phi, datals$Bmat_sub, `%*%`) # Phi_i is symmetrical
   Nmat_inv <- calc_Nmat_inv(datals$Bmat_sub, PhixBs, kprec)
 
   ## update theta
   Psy <- calc_Psy(Phi, PhixBs, Nmat_inv)
-  PsyxB <- calc_PsyxB(Psy, datals$Bmat_pop)
+  PsyxB <- purrr::map2(Psy, datals$Bmat_pop, `%*%`) # Psy_i is symmetrical
   theta <- update_theta(datals$Bmat_pop, PsyxB, datals$y, para$subs_in_pop, kprec)
 
   ## update delta
-  f <- calc_f(datals$Bmat_pop, theta, para$pop_of_subs, debug)
+  f <- purrr::map2(datals$Bmat_pop, para$pop_of_subs, ~.x %*% theta[[.y]])
   delta <- update_delta(Nmat_inv, PhixBs, datals$y, f, kprec)
   
   ## update beta (a column vector)
-  g <- calc_g(datals$Bmat_sub, delta, debug)
+  g <- purrr::map2(datals$Bmat_sub, delta, `%*%`)
   Mmat <- calc_Mmat(datals$y, f, g, datals$Xmat)
   beta <- update_beta(Lmat, Mmat, datals$y, f, g, kprec)
   
   ## calc prediction
-  yhat <- calc_yhat(f, g, datals$Xmat, beta)
+  yhat <- update_yhat(f, g, datals$Xmat, beta)
 
   ## theta & delta are matrices, each column represents one population/subject
   ## beta: a column vector
@@ -279,24 +364,33 @@ update_coefs <- function(datals, xX, para, kprec, debug = FALSE) {
        beta = beta,
        yhat = yhat)
 }
-  
-get_empty_coef_samples <- function(para, size) {
+
+get_coef_container <- function(para, size) {
   theta_array <- array(NA, c(para$dim_theta, para$n_pops, size),
-                     dimnames = list(NULL, names(para$subs_in_pop)))
+                       dimnames = list(NULL, names(para$subs_in_pop)))
   delta_array <- array(NA, c(para$dim_delta, para$n_subs, size),
-                     dimnames = list(NULL, names(para$pop_of_subs)))
-  beta_matrix <- matrix(NA, para$dim_beta, size,
-                        dimnames = list(para$beta_names))
-  list(population = theta_array,
-       subjects = delta_array,
+                       dimnames = list(NULL, names(para$pop_of_subs)))
+  if (is.null(para$dim_beta)) {
+    beta_matrix <- NULL
+  } else {
+    beta_matrix <- matrix(NA, para$dim_beta, size,
+                          dimnames = list(para$beta_names))
+  }
+  list(theta = theta_array,
+       delta = delta_array,
        beta = beta_matrix)
 }
 
-get_empty_prec_samples <- function(para, size) {
+get_prec_container <- function(para, size, init_prec) {
   theta_array <- array(NA, c(para$dim_theta, para$dim_theta, size))
   delta_array <- array(NA, c(para$dim_delta, para$dim_delta, size))
-  beta_array <- array(NA, c(para$dim_beta, para$dim_beta, size))
   eps_vector <- rep(NA, size)
+
+  if (is.null(para$dim_beta)) {
+    beta_array <- NULL
+  } else {
+    beta_array <- array(NA, c(para$dim_beta, para$dim_beta, size))
+  }
 
   list(theta = theta_array,
        delta = delta_array,
@@ -305,7 +399,13 @@ get_empty_prec_samples <- function(para, size) {
 }
 
 
-get_para <- function(grp, Bmat, Xmat, Kmat, dim_block, ranef) {
+get_dims <- function(Bmat, Xmat) {
+  list(theta = NCOL(Bmat$pop),
+       delta = NCOL(Bmat$sub),
+       beta = NCOL(Xmat))
+}
+
+get_para <- function(grp, Bmat, Xmat, Kmat, dim_block, ranef, prec_beta) {
   para <- list(n_pops = length(unique(grp$pop)),
                n_subs = length(unique(grp$sub)),
                dim_theta = NCOL(Bmat$pop),
@@ -321,16 +421,26 @@ get_para <- function(grp, Bmat, Xmat, Kmat, dim_block, ranef) {
                              function(x) as.character(unique(x)),
                              simplify = FALSE)
   
-  if (is.null(colnames(Xmat))) {
-    para$beta_names <- paste0('beta', seq_len(NCOL(Xmat)))
+  if (is.null(Xmat)) {
+    ## for ranef to be NULL if no random/fixed effects
+    para[c('dim_beta', 'ranef', 'beta_names')] <- NULL
   } else {
-    para$beta_names <- colnames(Xmat)
+    if (!is.null(prec_beta)) {
+      message("ranef overriden by prec$beta") 
+      para$ranef <- which(diag(prec$beta) > 0)
+    }
+    if (is.null(colnames(Xmat))) {
+      para$beta_names <- paste0('beta', seq_len(NCOL(Xmat)))
+    } else {
+      para$beta_names <- colnames(Xmat)
+    }
   }
   para
 }
 
 ## x: a vector or matrix, to be squared and sum
 update_with_gamma <- function(x, a, b) {
+  stopifnot(!is.null(x), !is.null(a), !is.null(b))
   shape <- 0.5 * length(x) + a
   rate <- 0.5 * sum(x^2) + b
   rgamma(1, shape = shape, rate = rate)
@@ -338,6 +448,7 @@ update_with_gamma <- function(x, a, b) {
 
 ## x: a matrix of col vectors x, to be tcrossprod
 update_with_wishart <- function(x, v, lambda) {
+  stopifnot(!is.null(x), !is.null(v), !is.null(lambda))
   df <- v + NCOL(x)
   scale <- lambda + tcrossprod(x)
   inv_scale <- chol2inv(chol(scale))
@@ -383,28 +494,41 @@ update_prec_delta <- function(delta, dim_block, prior) {
 ## yhat, y: list of col vectors/vectors with the same names
 ## return precision of the residual
 update_prec_eps <- function(yhat, y, prior) {
-  stopifnot(names(y) == names(yhat))
+  ## stopifnot(names(y) == names(yhat))
   resid <- unlist(yhat) - unlist(y)
   update_with_gamma(resid, prior$a, prior$b)
 }
 
 ## beta: col vector/vector
 ## ranef: a vector of indices that corresponds to the random effects
+## if ranef is NULL, return a zero matrix. (i.e. everything is fixed effect)
 update_prec_beta <- function(beta, ranef, prior) {
-  stopifnot(NCOL(beta) == 1)
-  x <- beta[ranef]
-  prec <- update_with_gamma(x, prior$a, prior$b)
-  rep(0, times = NROW(beta)) %>%
-    `[<-`(ranef, prec) %>%
-    diag()
+  if (is.null(beta)) {
+    NULL
+  } else if (is.null(ranef)) {
+    diag(0, length(beta))
+  } else {
+    stopifnot(NCOL(beta) == 1)
+    x <- beta[ranef]
+    prec <- update_with_gamma(x, prior$a, prior$b)
+    rep(0, times = NROW(beta)) %>%
+      `[<-`(ranef, prec) %>%
+      diag()
+  }
 }
 
-
-update_precs <- function(kcoef, y, para, prior_ls) {
-  list(theta = update_prec_theta(kcoef$theta, para$Kmat, prior_ls$theta),
-       delta = update_prec_delta(kcoef$delta, para$dim_block, prior_ls$delta),
-       eps = update_prec_eps(kcoef$yhat, y, prior_ls$eps),
-       beta = update_prec_beta(kcoef$beta, para$ranef, prior_ls$beta))
+update_precs <- function(kcoef, y, para, prior_ls, init_prec = NULL) {
+  if (!is.null(init_prec)) {
+    if (is.null(para$dim_beta)) {
+      init_prec$beta <- NULL
+    }
+    init_prec
+  } else {
+    list(theta = update_prec_theta(kcoef$theta, para$Kmat, prior_ls$theta),
+         delta = update_prec_delta(kcoef$delta, para$dim_block, prior_ls$delta),
+         eps = update_prec_eps(kcoef$yhat, y, prior_ls$eps),
+         beta = update_prec_beta(kcoef$beta, para$ranef, prior_ls$beta))
+  }
 }
 
 
@@ -413,8 +537,13 @@ update_precs <- function(kcoef, y, para, prior_ls) {
 split_data_subjects <- function(Bmat, Xmat, y, grp_sub, debug) {
   datals <- list(Bmat_pop = split.data.frame(Bmat$pop, grp_sub),
                  Bmat_sub = split.data.frame(Bmat$sub, grp_sub),
-                 Xmat = split.data.frame(Xmat, grp_sub),
                  y = split.default(y, grp_sub))
+
+  if (is.null(Xmat)) {
+    datals$Xmat <- NULL
+  } else {
+    datals$Xmat <- split.data.frame(Xmat, grp_sub)
+  }
 
   if (debug) {
     stopifnot(names(datals$Bmat_pop) == names(datals$Bmat_sub),
@@ -424,35 +553,18 @@ split_data_subjects <- function(Bmat, Xmat, y, grp_sub, debug) {
   datals
 }
 
-## f1 <- function(n_samples, resids, ig_a, ig_b ) {
-##   ## update sigma^2_eps
-##   shape_eps <- 0.5 * n_samples + ig_a
-##   rate_eps <- 0.5 * crossprod(resids) + ig_b
-##   rgamma(1, shape = shape_eps, rate = rate_eps)
-## }
-
-## ## update sigma^2_theta
-## shape_pop <- 0.5 * n_pops * rank_K + ig_a$pop
-## rate_pop <- 0.5 * sum((Kmat %*% coef$pop)^2) + ig_b$pop
-## prec$pop <- rgamma(1, shape = shape_pop, rate = rate_pop)
-
-## f2 <- function() {
-##   coef_sub <- matrix(1:6, 2, 3)
-##   n_subs <- ncol(coef_sub)
-##   iw_v <- 3
-##   iw_lambda <- diag(nrow(coef_sub))
-##   ## update Sigma_dev1
-##   df_sub1 <- iw_v + n_subs
-##   scale_sub1 <- iw_lambda + tcrossprod(coef_sub)
-##   inv_scale_sub1 <- chol2inv(chol(scale_sub1))
-##   rWishart(1, df = df_sub1, Sigma = inv_scale_sub1)[, , 1]
-## }
-
-## ## update sigma^2_dev2
-## shape_sub2 <- 0.5 * n_subs * (dim_delta - dim_sub1) + ig_a$sub2
-## rate_sub2 <- 0.5 * sum(coef$sub[-(1:dim_sub1), ]^2) + ig_b$sub2
-## prec$sub2 <- rgamma(1, shape = shape_sub2, rate = rate_sub2)
-
+## calculate posterior mean from an array or vector of samples. The samples are
+## populated along the last dimension, e.g. the columns of a matrix are the
+## samples; the depth of a 3D array are the samples.
+pmean <- function(samples) {
+  if (is.array(samples)) {
+    rowMeans(samples, dims = length(dim(samples)) - 1)
+  } else if (is.vector(samples)) {
+    mean(samples)
+  } else {
+    stop("Invalid samples structure.")
+  }
+}
 
 ## This is a Gibbs sampler v3 for longitudinal Bayesian semiparametric ridge.
 ## Update two block of parameters: variance and coefs
@@ -466,9 +578,42 @@ split_data_subjects <- function(Bmat, Xmat, y, grp_sub, debug) {
 #' Bayesian ridge for longitudinal semiparemetric models
 #'
 #' This is a Gibbs sampler v3 for fitting Bayesian longitudinal semiparametric
-#' models. The model is
-#' y_{ij} = Bmat
+#' models. It assumes that there are multiple populations in the model and each
+#' population is modelled by a 'population' curve. Within each population, they
+#' are multiple subjects, and each subject are modelled by a 'subject'
+#' curve. The subject curves are treated as deviations from their respective
+#' population curves. On top of that, fixed or random effects can be added to
+#' the model. This is useful when, for example, a particular treatment was
+#' applied to some of the populations or subjects, and the user is interested in
+#' the effect of the treatment.
 #'
+#' The population and subject curves are modelled as linear (in statistical
+#' sence, not only stright lines). This includes polynomials and splines.
+#'
+#' The mathematical model is
+#'
+#' y_i = Bmat$pop_i %*% \theta_i + Bmat$sub_i %*% \delta_i + Xmat_i %*% \beta +
+#' \epsilon_i
+#'
+#' where 'i' is the index of subjects, y_i is a vector of observation for the
+#' i^{th} subjectm, Bmat$pop_i and Bmat$sub_i are the model/design matrices for
+#' the population and subject curves (of the i^{th} subject) respectively, and
+#' \epsilon_i are Gaussian errors. The \theta_i should be intepreted as the
+#' regression coefficients of the population curve of the i^{th} subject, and
+#' the subjects belonging to the same population will have the same \theta. This
+#' implies that some of the \theta_i will be identical. However, \delta_i will
+#' be different for each subject, while \beta will be the same for all subjects.
+#'
+#' The coefficients \theta, \delta, \beta and \epsilon are all Gaussian, but
+#' their covariance structures are not necessarily diagonal. Consult the
+#' manual/paper for more info.
+#'
+#' The sampler first updates the precision, then the coefficients. The joint
+#' conditional posterior of all the coefficients is often highly correlated, but
+#' fortunately a closed-form expression is available and is utilised here. This
+#' implies that the convergence of this Gibbs sampler is quick and does not
+#' require burning many samples in the beginning.
+#' 
 #' @param y A vector of the response vector.
 #' @param grp A list of two numeric/factor/character vectors, grp$pop and
 #'   grp$sub, specifying the population and subject to which each observation
@@ -484,14 +629,32 @@ split_data_subjects <- function(Bmat, Xmat, y, grp_sub, debug) {
 #'   this to 0 if all subject coefficients are uncorrelated, or `dim(Bmat$sub)`
 #'   if everything is correlated.
 #' @param ranef A numeric vector of indices of the Xmat columns where the
-#'   corresponding coefficients should be treated as random effects.
+#'   corresponding coefficients should be treated as random effects. NULL if
+#'   everything is fixed. This option will get overridden by the 'beta' term in
+#'   `prec`.
 #' @param burn The number of samples to be burned before actual sampling.
 #' @param size The number of samples to be obtained from the samples.
-#' @param init unknown yet
+#' @param init An initial values of the regression coefficients for the
+#'   sampler...
 #' @param prior unknown yet
-#' @param prec unknown yet
+#' @param prec An optional list of precisions with 'theta', 'delta', 'beta' and
+#'   'eps'. If supplied, the precisions of the model are fixed. All the elements
+#'   are square matrices, except 'eps' which is a number. The 'beta' term here
+#'   will override `ranef` (i.e. all the 0 in diagonal will result in the
+#'   corresponding beta being fixed).
+#'
+#' @return A list of length two, posterior samples and means are stored in
+#'   'samples' and 'means' elements respectively. Within each elements, 'coef'
+#'   are the regression coefficients and 'prec' the precisions (i.e. the inverse
+#'   of variances).
+#'
+#'  The samples are organised as arrays, except coef$beta (matrix) and prec$eps
+#'  (vector). The samples are always populated along the last dimension of the
+#'  array, matrix or vector. For the 'coef' samples, the first dimension of the
+#'  array/matrix is always the dimension of the coefficients, followed by the
+#'  indices of populations/subjects (for 'theta' and 'delta' only). All the
+#'  precisions except 'eps' are symmetrical square matrices.
 #' 
-#' @export
 bayes_ridge_semi <- function(y, grp, Bmat, Xmat,
                              Kmat = NULL, dim_block = NULL, ranef = NULL,
                              burn = 0, size = 1000, init = NULL, prior = NULL,
@@ -499,12 +662,13 @@ bayes_ridge_semi <- function(y, grp, Bmat, Xmat,
   
   grp <- purrr::map(grp, ~factor(.x, levels = unique(.x)))
   check_Kmat(Kmat)
+  para <- get_para(grp, Bmat, Xmat, Kmat, dim_block, ranef, prec$beta)
+  check_prec(prec, para)
   ## grp <- check_grp(grp)
   
   ## para: n_subs, subs_in_pop, pop_of_subs
-  para <- get_para(grp, Bmat, Xmat, Kmat, dim_block, ranef)
-  coef_samples <- get_empty_coef_samples(para, size)
-  prec_samples <- get_empty_prec_samples(para, size)
+  coef_samples <- get_coef_container(para, size)
+  prec_samples <- get_prec_container(para, size, prec)
 
   ## get a list where each element is a list of df split according to subjects
   datals <- split_data_subjects(Bmat, Xmat, y, grp$sub, debug)
@@ -513,22 +677,18 @@ bayes_ridge_semi <- function(y, grp, Bmat, Xmat,
   kcoef <- initialise_with_pls_v3(init, para, pls, datals, debug)
 
   ## some pre-calculation
-  xX <- purrr::map(datals$Xmat, crossprod)
+  xX <- calc_xX(datals$Xmat)
   prior_ls <- prior
   
   for (k in seq.int(-burn + 1, size)) {
-    if (is.null(prec)) {
-      kprec <- update_precs(kcoef, y, para, prior_ls)
-    } else {
-      kprec <- prec
-    }
+    kprec <- update_precs(kcoef, y, para, prior_ls, prec)
     kcoef <- update_coefs(datals, xX, para, kprec, debug)
-  if (k > 0) {
+    if (k > 0) {
       stopifnot(NROW(kcoef$theta) == para$dim_theta,
                 NROW(kcoef$delta) == para$dim_delta,
                 NROW(kcoef$beta) == para$dim_beta)
-      coef_samples$population[, colnames(kcoef$theta), k] <- kcoef$theta
-      coef_samples$subjects[, colnames(kcoef$delta), k] <- kcoef$delta
+      coef_samples$theta[, colnames(kcoef$theta), k] <- kcoef$theta
+      coef_samples$delta[, colnames(kcoef$delta), k] <- kcoef$delta
       coef_samples$beta[, k] <- kcoef$beta
       
       prec_samples$theta[, , k] <- kprec$theta
@@ -537,6 +697,9 @@ bayes_ridge_semi <- function(y, grp, Bmat, Xmat,
       prec_samples$eps[k] <- kprec$eps
     }
   }
-  means <- purrr::map(coef_samples, ~rowMeans(.x, dims = length(dim(.x)) - 1))
-  list(means = means, coef_samples = coef_samples, prec_samples = prec_samples)
+  
+  list(samples = list(coef = coef_samples,
+                      prec = prec_samples),
+       means = list(coef = purrr::map(coef_samples, pmean),
+                    prec = purrr::map(prec_samples, pmean)))
 }
