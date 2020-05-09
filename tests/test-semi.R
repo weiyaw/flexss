@@ -2,6 +2,7 @@
 ## models with some dummy design matrices.
 
 library(magrittr)
+load_all()
 
 ## test init_delta
 rm(list = ls())
@@ -119,8 +120,11 @@ set.seed(1)
 update_with_gamma(c(11, 13, 15), -0.5, 0)
 set.seed(1)
 update_prec_beta(11:15, c(1, 3, 5), list(a = -0.5, b = 0))
-
-
+update_prec_beta(11:15, c(1, 3, 5), NULL)                 # throw an error
+update_prec_beta(11:15, NULL, NULL)                       # return a zero matrix
+update_prec_beta(11:15, NULL, list(a = -0.5, b = 0))      # return a zero matrix
+update_prec_beta(NULL, NULL, NULL)                        # return NULL
+update_prec_beta(NULL, c(1, 3, 5), list(a = -0.5, b = 0)) # return NULL
 
 
 ## fit the model with some dummy data (i.e. fit with the truth)
@@ -169,11 +173,19 @@ prior <- list(theta = list(a = -0.5, b = 0),
               beta = list(a = 0, b = 0),
               eps = list(a = -0.5, b = 0))
 
-fm1 <- bayes_ridge_semi(y, grp, Bmat, Xmat, Kmat = diag(4), prec = prec)
+load_all()
+set.seed(1)
+## emperical bayes, fixed effects
+fm1 <- bayes_ridge_semi(y, grp, Bmat, Xmat, Kmat = diag(4), prec = prec, size = 10)
+## full bayesian, fixed and random effects
 fm2 <- bayes_ridge_semi(y, grp, Bmat, Xmat, Kmat = diag(4), 0, c(1), prior = prior)
 fm2$means
-
-
+## full Bayesian, no fixed/random effects
+fm3 <- bayes_ridge_semi(y, grp, Bmat, NULL, Kmat = diag(4), 0, c(1), prior = prior)
+fm3$means
+load_all()
+## emperical Bayesian, no fixed/random effects
+fm4 <- bayes_ridge_semi(y, grp, Bmat, NULL, Kmat = diag(4), prec = prec, size = 10)
 
 
 

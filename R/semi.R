@@ -309,13 +309,23 @@ update_beta <- function(Lmat, Mmat, y, f, g, kprec) {
 ## the rest of args: list of column vectors/matrix, length = n_subs
 ## return a column vector (not numeric vector)
 update_yhat <- function(f, g, Xmat, beta) {
+  ## stopifnot(names(f) == names(g))
+  ## if (is.null(Xmat)) {
+  ##   unlist(f) + unlist(g)
+  ## } else {
+  ##   stopifnot(names(f) == names(Xmat))
+  ##   tall_Xmat <- do.call(rbind, Xmat)
+  ##   unlist(f) + unlist(g) + tall_Xmat %*% beta
+  ## }
+
+  ## safer to produce a list, or risk messing up the subject names
+  stopifnot(names(f) == names(g))
   if (is.null(Xmat)) {
-    unlist(f) + unlist(g)
+    purrr::map2(f, g, `+`)
   } else {
-    tall_Xmat <- do.call(rbind, Xmat)
-    unlist(f) + unlist(g) + tall_Xmat %*% beta
+    stopifnot(names(f) == names(Xmat))
+    purrr::pmap(list(f, g, Xmat), ~..1 + ..2 + ..3 %*% beta)
   }
-  ## unlist(purrr::pmap(list(f, g, Xmat), ~..1 + ..2 + ..3 %*% beta))
 }
 
 
@@ -494,9 +504,9 @@ update_prec_delta <- function(delta, dim_block, prior) {
 ## yhat, y: list of col vectors/vectors with the same names
 ## return precision of the residual
 update_prec_eps <- function(yhat, y, prior) {
-  ## stopifnot(names(y) == names(yhat))
-  resid <- unlist(yhat) - unlist(y)
-  update_with_gamma(resid, prior$a, prior$b)
+  stopifnot(names(y) == names(yhat))
+  resids <- unlist(y) - unlist(yhat)
+  update_with_gamma(resids, prior$a, prior$b)
 }
 
 ## beta: col vector/vector
@@ -660,7 +670,7 @@ bayes_ridge_semi <- function(y, grp, Bmat, Xmat,
                              burn = 0, size = 1000, init = NULL, prior = NULL,
                              prec = NULL, debug = TRUE) {
   
-  grp <- purrr::map(grp, ~factor(.x, levels = unique(.x)))
+  grp <- purrr::map(grp, as.factor)
   check_Kmat(Kmat)
   para <- get_para(grp, Bmat, Xmat, Kmat, dim_block, ranef, prec$beta)
   check_prec(prec, para)
@@ -681,12 +691,15 @@ bayes_ridge_semi <- function(y, grp, Bmat, Xmat,
   prior_ls <- prior
   
   for (k in seq.int(-burn + 1, size)) {
-    kprec <- update_precs(kcoef, y, para, prior_ls, prec)
+    kprec <- update_precs(kcoef, datals$y, para, prior_ls, prec)
     kcoef <- update_coefs(datals, xX, para, kprec, debug)
+
+    ## print progress
+    if (k %% 1000 == 0) {
+      message(k, " samples generated.")
+    }
+
     if (k > 0) {
-      stopifnot(NROW(kcoef$theta) == para$dim_theta,
-                NROW(kcoef$delta) == para$dim_delta,
-                NROW(kcoef$beta) == para$dim_beta)
       coef_samples$theta[, colnames(kcoef$theta), k] <- kcoef$theta
       coef_samples$delta[, colnames(kcoef$delta), k] <- kcoef$delta
       coef_samples$beta[, k] <- kcoef$beta
