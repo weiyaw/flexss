@@ -77,7 +77,6 @@ fit_tpf_splines <- function(data, K, deg, size, burn, init = NULL, prior = NULL)
 #' @return A list with posterior means, samples and information of the basis
 #'     functions.
 #'
-#' @importFrom magrittr %>%
 #' @export
 fit_bs_splines <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
                            prior = NULL) {
@@ -123,6 +122,8 @@ fit_bs_splines <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
                          degree = deg)
   }
   fm$data <- data[c('x', 'y', 'sub', 'pop')]
+  fm$data$pop <- as.factor(fm$data$pop)
+  fm$data$sub <- as.factor(fm$data$sub)
   ## fm$data <- dplyr::select(data, .data$x, .data$y, .data$sub, .data$pop) %>%
   ##   dplyr::mutate(sub = as.factor(.data$sub), pop = as.factor(.data$pop))
   fm
@@ -162,32 +163,30 @@ fit_bs_splines <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
 #' @param data A data frame with at least three columns (\code{x}, \code{y} and
 #'     \code{sub}). If a \code{pop} column is also given, separate mean curves
 #'     are fitted to each population.
-#'
 #' @param K A list of numbers of interior knots for the population and subject
 #'     curves. The list must contain \code{sub} and \code{pop}.
-#'
 #' @param deg The degree of the spline polynomial
-#'
+#' @param Xmat A design matrix for the non-spline terms, i.e. fixed and random
+#'   effects.
+#' @param ranef A numeric vector of indices of the Xmat columns where the
+#'   corresponding coefficients should be treated as random effects. NULL if
+#'   everything is fixed. This option will get overridden by the 'beta' term in
+#'   `prec`.
 #' @param size The number of samples to be drawn from the posterior.
-#'
 #' @param burn The number of samples to burn before recording. Default to
 #'     one-tenth of \code{size}.
-#'
 #' @param ridge Use ridge regression or linear mixed effect models?
-#'
 #' @param init List of matrices of the coefficients, containing \code{sub} and
 #'     \code{pop}. The columnns of the matrices correspond to each
 #'     population/subject.
-#'
 #' @param prior List of hyperparameters of the covariance priors.
 #'
 #' @return A list with posterior means, samples and information of the basis
 #'     functions.
 #'
-#' @importFrom magrittr %>%
 #' @export
-fit_bs_splines_v3 <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
-                              prior = NULL) {
+fit_bs_splines_v3 <- function(data, K, deg, Xmat, ranef, size, burn,
+                              ridge = FALSE, init = NULL, prior = NULL) {
 
   check_data_K(data, K)
   if (!("pop" %in% names(data))) data$pop <- "dme__"
@@ -224,8 +223,8 @@ fit_bs_splines_v3 <- function(data, K, deg, size, burn, ridge = FALSE, init = NU
   }
   
   fm <- bayes_ridge_semi(y = data$y, grp = list(pop = data$pop, sub = data$sub),
-                         Bmat = Bmat, Xmat = NULL, Kmat = Kmat, dim_block = deg + 1,
-                         ranef = NULL, burn = burn, size = size, init = init,
+                         Bmat = Bmat, Xmat = Xmat, Kmat = Kmat, dim_block = deg + 1,
+                         ranef = ranef, burn = burn, size = size, init = init,
                          prior = prior, prec = NULL)
 
   fm$basis <- list(pop = NA, sub = NA)
@@ -240,6 +239,9 @@ fit_bs_splines_v3 <- function(data, K, deg, size, burn, ridge = FALSE, init = NU
   }
 
   fm$data <- data[c('x', 'y', 'sub', 'pop')]
+  fm$data$pop <- as.factor(fm$data$pop)
+  fm$data$sub <- as.factor(fm$data$sub)
+
   fm$model_mat <- Bmat
   fm$pop_of_subs <- tapply(data$pop, data$sub,
                            function(x) as.character(unique(x)),
