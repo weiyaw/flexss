@@ -129,7 +129,6 @@ fit_bs_splines <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
   fm
 }
 
-}
 
 ## predict with posterior means
 ## need a function to do posterior predictive check

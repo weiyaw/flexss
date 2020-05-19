@@ -1,4 +1,4 @@
-## this script containts files for testing routines for fitting semiparametric
+# this script containts files for testing routines for fitting semiparametric
 ## models with some dummy design matrices.
 
 library(magrittr)
@@ -62,7 +62,7 @@ set.seed(1)
 update_with_gamma(x[3:5, ], -0.5, 0)
 set.seed(1)
 Kmat <- cbind(0, 0, diag(3))
-update_prec_theta(x, Kmat, list(a = -0.5, b = 0)) / crossprod(Kmat)
+update_prec_theta(x, Kmat, list(a = -0.5, b = 0)) / Matrix::crossprod(Kmat)
 
 ## penalise the 1st-order difference between rows of x
 set.seed(1)
@@ -149,7 +149,7 @@ beta <- rnorm(2) # N(0, diag(2))
 ord <- order(grp$pop, grp$sub)
 Bmat <- purrr::map(Bmat, ~.x[ord,])
 Xmat <- Xmat[ord, ]
-grp <- purrr::map(grp, ~.x[ord])
+grp <- purrr::map(grp, ~factor(.x[ord], unique(.x)))
 
 pop_term <- split.data.frame(Bmat$pop, grp$pop) %>%
   purrr::map2(theta, ~as.numeric(.x %*% .y)) %>%
@@ -161,9 +161,15 @@ beta_term <- Xmat %*% beta
 error <- rnorm(50) # N(0, diag(50))
 y <- pop_term + sub_term + beta_term + error
 
+## new Bmat
+Bmat$pop <- purrr::map(unique(grp$pop), ~`[<-`(Bmat$pop, grp$pop != .x, , 0)) %>%
+  {do.call(cbind, .)}
+
+## new Kmat
+Kmat <- Matrix::bdiag(diag(4), diag(4))
 
 ## true precision matrix, 0 entry for fixed effects
-prec <- list(theta = diag(c(0, 0, 1, 1)),
+prec <- list(theta = Matrix::bdiag(diag(c(0, 0, 1, 1)), diag(c(0, 0, 1, 1))),
              delta = diag(4),
              beta = diag(c(0, 1)),
              eps = 1)
@@ -175,17 +181,18 @@ prior <- list(theta = list(a = -0.5, b = 0),
 
 load_all()
 set.seed(1)
-## emperical bayes, fixed effects
-fm1 <- bayes_ridge_semi(y, grp, Bmat, Xmat, Kmat = diag(4), prec = prec, size = 10)
+## emperical bayes, fixed and random effects (ranef overriden by prec)
+fm1 <- bayes_ridge_semi(y, grp, Bmat, Xmat, Kmat = Kmat, prec = prec, size = 200)
 ## full bayesian, fixed and random effects
-fm2 <- bayes_ridge_semi(y, grp, Bmat, Xmat, Kmat = diag(4), 0, c(1), prior = prior)
+fm2 <- bayes_ridge_semi(y, grp, Bmat, Xmat, Kmat = Kmat, dim_block = 0, ranef = c(1),
+                        prior = prior, size = 200)
 fm2$means
 ## full Bayesian, no fixed/random effects
-fm3 <- bayes_ridge_semi(y, grp, Bmat, NULL, Kmat = diag(4), 0, c(1), prior = prior)
+fm3 <- bayes_ridge_semi(y, grp, Bmat, NULL, Kmat = Kmat, 0, c(1), prior = prior)
 fm3$means
 load_all()
 ## emperical Bayesian, no fixed/random effects
-fm4 <- bayes_ridge_semi(y, grp, Bmat, NULL, Kmat = diag(4), prec = prec, size = 10)
+fm4 <- bayes_ridge_semi(y, grp, Bmat, NULL, Kmat = Kmat, prec = prec, size = 10)
 
 
 
