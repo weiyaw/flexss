@@ -3,6 +3,7 @@
 .Rhistory
 .RData
 .Ruserdata
+.owncloudsync.log.cloud
 src/*.o
 src/*.so
 src/*.dll
