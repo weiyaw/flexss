@@ -44,9 +44,11 @@ get_simdata3 <- function(seed = 1) {
               sub = as.character(rep(1:10, each = length(x))))
 
   Bmat <- get_design_bs(x, K, deg)$design
-  ## sub 1, 3, 5, 7, 9 has one effect, the rest another
-  effect <- as.factor(as.numeric(grp$sub) %% 2 == 0)
-  
+
+  ## effect1: sub 1, 3, 5, 7, 9 has level 1, the rest level 0
+  effect1 <- as.factor(as.numeric(grp$sub) %% 2)
+  ## effect2: sub 1, 4, 7, 10 has level 1, sub 2, 5, 8 has level 2, the rest level 0
+  effect2 <- as.factor(as.numeric(grp$sub) %% 3)
   dim_theta <- K + deg + 1
   dim_delta <- K + deg + 1
 
@@ -61,7 +63,7 @@ get_simdata3 <- function(seed = 1) {
   y <- f + g + rnorm(length(f), sd = 0.2)
 
   data.frame(y = y, x = rep(x, n_subs),  sub = grp$sub, pop = grp$pop, truth = f + g,
-             effect = effect)
+             effect1 = effect1, effect2 = effect2)
 }
 
 

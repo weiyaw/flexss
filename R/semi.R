@@ -4,7 +4,8 @@ crossprod <- Matrix::crossprod
 ## inverse of a symmetrical, positive definite matrix
 pdinv <- function(x) {
   stopifnot(Matrix::isSymmetric(x))
-  x <- as(Matrix::forceSymmetric(x), 'dpoMatrix')
+  ## use 'dpoMatrix' only if we can guarantee x is pd
+  ## xpd <- as(Matrix::forceSymmetric(x), 'dpoMatrix')
   Matrix::solve(x)
 }
 
@@ -154,7 +155,7 @@ init_yhat <- function(datals, theta, delta, beta, debug = FALSE) {
   g_init <- purrr::imap(datals$Bmat_sub, ~as.vector(.x %*% delta[, .y]))
   Xb_init <- calc_Xb(datals$Xmat, beta)
 
-  f_init + unlist(g_init, use.names = FALSE) + Xb_init
+  update_yhat(f_init, unlist(g_init, use.names = FALSE), Xb_init)
 }
 
 ## initialise theta with a penalised LS estimate, and delta with rnorms with small sd
@@ -346,7 +347,11 @@ calc_f <- function(Bmat_pop, theta) {
 ## grp_sub: factor
 ## return: list of row matrix
 calc_Mmat <- function(y, f, Xb, Bmat_sub, grp_sub) {
-  resids <- split(y - f - Xb, grp_sub)
+  if (is.null(Xb)) {
+    resids <- split(y - f, grp_sub)
+  } else {
+    resids <- split(y - f - Xb, grp_sub)
+  }
   stopifnot(names(resids) == names(Bmat_sub))
   purrr::map2(resids, Bmat_sub, crossprod)
 }
@@ -372,7 +377,15 @@ calc_g <- function(Bmat_sub, delta) {
   as.matrix(unlist(g_ls, use.names = FALSE))
 }
 
-
+update_yhat <- function(f, g, Xb) {
+  stopifnot(length(f) == length(g))
+  if (is.null(Xb)) {
+    f + g
+  } else {
+    stopifnot(length(f) == length(Xb))
+    f + g + Xb
+  }
+}
 
 ## calc_xX <- function(Xmat) {
 ##   if (is.null(Xmat)) {
@@ -585,19 +598,23 @@ update_coefs <- function(datals, xBs, para, kprec, debug = FALSE) {
   delta <- update_delta(Lmat_inv, Mmat, kprec)
   g <- calc_g(datals$Bmat_sub, delta)
   
+  yhat <- update_yhat(f, g, Xb)
+
   ## delta: matrix, each column represents one /subject
   ## theta, beta: column vectors
   ## yhat: a list of column vectors, length = n_subs
+
   list(theta = theta,
        delta = do.call(cbind, delta) %>% `colnames<-`(names(delta)),
        beta = beta,
-       yhat = f + g + Xb)
+       yhat = yhat)
 }
 
 get_coef_container <- function(para, size) {
   ## theta_array <- array(NA, c(para$dim_theta, para$n_pops, size),
   ##                      dimnames = list(NULL, names(para$subs_in_pop)))
-  theta_array <- matrix(NA, para$dim_theta, size) # just for prototyping
+  theta_array <- matrix(NA, para$dim_theta, size,
+                        dimnames = list(para$theta_names)) # just for prototyping
   delta_array <- array(NA, c(para$dim_delta, para$n_subs, size),
                        dimnames = list(NULL, unique(para$grp_sub)))
   if (is.null(para$dim_beta)) {
@@ -641,6 +658,7 @@ get_para <- function(grp, Bmat, Xmat, Kmat, dim_block, ranef, prec_beta) {
                dim_theta = NCOL(Bmat$pop),
                dim_delta = NCOL(Bmat$sub),
                dim_beta = NCOL(Xmat),
+               theta_names = colnames(Bmat$pop),
                Kmat = Kmat,
                dim_block = dim_block,
                ranef = ranef)
@@ -682,7 +700,7 @@ update_with_wishart <- function(x, v, lambda) {
   stopifnot(!is.null(x), !is.null(v), !is.null(lambda))
   df <- v + NCOL(x)
   scale <- lambda + tcrossprod(x)
-  inv_scale <- pdinv(scale)
+  inv_scale <- as.matrix(pdinv(scale))
   rWishart(1, df = df, Sigma = inv_scale)[, , 1]
 }
 
@@ -699,7 +717,7 @@ update_prec_theta <- function(theta, Kmat, prior) {
 ## dim_block: the dimension corresponding to the block cov matrix
 ## return precision matrix for delta
 update_prec_delta <- function(delta, dim_block, prior) {
-
+  
   block <- NA
   iid <- NA
   
@@ -887,7 +905,7 @@ pmean <- function(samples) {
 #'   'samples' and 'means' elements respectively. Within each elements, 'coef'
 #'   are the regression coefficients and 'prec' the precisions (i.e. the inverse
 #'   of variances).
-#'
+#' 
 #'  The samples are organised as arrays, except coef$beta (matrix) and prec$eps
 #'  (vector). The samples are always populated along the last dimension of the
 #'  array, matrix or vector. For the 'coef' samples, the first dimension of the
@@ -895,18 +913,13 @@ pmean <- function(samples) {
 #'  indices of populations/subjects (for 'theta' and 'delta' only). All the
 #'  precisions except 'eps' are symmetrical square matrices.
 #' 
-bayes_ridge_semi <- function(y, grp, Bmat, Xmat,
+bayes_ridge_semi <- function(y, grp, Bmat, Xmat = NULL,
                              Kmat = NULL, dim_block = NULL, ranef = NULL,
                              burn = 0, size = 1000, init = NULL, prior = NULL,
                              prec = NULL, debug = TRUE) {
-  
-  ## sort the data according to the subject index
-  idx <- order(grp$sub, grp$pop) # grp$sub should be nested within grp$pop, so
-                                 # the second argument should not matter
-  y <- y[idx]
-  grp <- purrr::map(grp, ~factor(.x[idx], unique(.x[idx])))
-  Bmat <- purrr::map(Bmat, ~.x[idx, ])
-  Xmat <- Xmat[idx, ]
+
+  ## assumptions on y, Bmat, Xmat and grp
+  ## grp$sub are 'sticked' together, i.e. rows belonging to the same subjects are sticked together.
   
   check_Kmat(Kmat)
   para <- get_para(grp, Bmat, Xmat, Kmat, dim_block, ranef, prec$beta)
@@ -932,7 +945,7 @@ bayes_ridge_semi <- function(y, grp, Bmat, Xmat,
     kcoef <- update_coefs(datals, xBs, para, kprec, debug)
 
     ## print progress
-    if (k %% 1000 == 0) {
+    if (k %% floor(size / 5) == 0) {
       message(k, " samples generated.")
     }
 
@@ -940,10 +953,10 @@ bayes_ridge_semi <- function(y, grp, Bmat, Xmat,
       coef_samples$theta[, k] <- kcoef$theta
       coef_samples$delta[, colnames(kcoef$delta), k] <- kcoef$delta
       coef_samples$beta[, k] <- kcoef$beta
-      
+
       prec_samples$theta[, , k] <- as.matrix(kprec$theta)
       prec_samples$delta[, , k] <- as.matrix(kprec$delta)
-      prec_samples$beta[, , k] <- as.matrix(kprec$beta)
+      prec_samples$beta[, , k] <- kprec$beta
       prec_samples$eps[k] <- kprec$eps
     }
   }

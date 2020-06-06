@@ -1,45 +1,45 @@
 block_diag <- function(..., size = NULL) {
 
-    ## Construct a big matrix with its diagonal elements the matrices provided
-    ## in "A". If "A" is a matrix, the function returns a matrix with "size" of
-    ## "A" in the diagonal elements. If "A" is a list, it returns a matrix with
-    ## diagonal elements as all the matrices contained inside the list.
+  ## Construct a big matrix with its diagonal elements the matrices provided
+  ## in "A". If "A" is a matrix, the function returns a matrix with "size" of
+  ## "A" in the diagonal elements. If "A" is a list, it returns a matrix with
+  ## diagonal elements as all the matrices contained inside the list.
 
-    A <- list(...)
-    if (length(A) == 1 && is.matrix(A[[1]])) {
-        if (is.null(size)) {
-            stop("Size of the resulting matrix not supplied.")
-        }
-        n_row <- NROW(A[[1]])
-        n_col <- NCOL(A[[1]])
-        row_idx <- seq(1, n_row)
-        col_idx <- seq(1, n_col)
-        res <- matrix(0, size * n_row, size * n_col)
-        for (i in seq(0, size - 1)) {
-            res[i * n_row + row_idx, i * n_col + col_idx] <- A[[1]]
-        }
-        return(res)
+  A <- list(...)
+  if (length(A) == 1 && is.matrix(A[[1]])) {
+    if (is.null(size)) {
+      stop("Size of the resulting matrix not supplied.")
+    }
+    n_row <- NROW(A[[1]])
+    n_col <- NCOL(A[[1]])
+    row_idx <- seq(1, n_row)
+    col_idx <- seq(1, n_col)
+    res <- matrix(0, size * n_row, size * n_col)
+    for (i in seq(0, size - 1)) {
+      res[i * n_row + row_idx, i * n_col + col_idx] <- A[[1]]
+    }
+    return(res)
 
-   } else if (length(A) > 1) {
-       if (!all(vapply(A, is.matrix, TRUE))) {
-            stop("The list contains non-matrix objects.")
-       }
-        dims <- vapply(A, dim, c(1, 1))
-        total_dims <- rowSums(dims)
-        res <- matrix(0, total_dims[1], total_dims[2])
-        row_rolling <- col_rolling <- 0
-        for (i in seq(1, NCOL(dims))) {
-            row_idx <- row_rolling + seq(1, dims[1, i])
-            col_idx <- col_rolling + seq(1, dims[2, i])
-            res[row_idx, col_idx] <- A[[i]]
-            row_rolling <- row_rolling + dims[1, i]
-            col_rolling <- col_rolling + dims[2, i]
-        }
-        return(res)
+  } else if (length(A) > 1) {
+    if (!all(vapply(A, is.matrix, TRUE))) {
+      stop("The list contains non-matrix objects.")
+    }
+    dims <- vapply(A, dim, c(1, 1))
+    total_dims <- rowSums(dims)
+    res <- matrix(0, total_dims[1], total_dims[2])
+    row_rolling <- col_rolling <- 0
+    for (i in seq(1, NCOL(dims))) {
+      row_idx <- row_rolling + seq(1, dims[1, i])
+      col_idx <- col_rolling + seq(1, dims[2, i])
+      res[row_idx, col_idx] <- A[[i]]
+      row_rolling <- row_rolling + dims[1, i]
+      col_rolling <- col_rolling + dims[2, i]
+    }
+    return(res)
 
-   } else {
-       warning("Non-matrix or list object supplied")
-   }
+  } else {
+    warning("Non-matrix or list object supplied")
+  }
 }
 
 
@@ -139,12 +139,32 @@ get_diff_mat <- function(size, k) {
     D[(col(D) + 1) == row(D)] <- -1
     D <- D[-1, ]
     if (k == 1) {
-        return(D)
+      D
     } else {
-        return(get_diff_mat(size - 1, k - 1) %*% D)
+      Recall(size - 1, k - 1) %*% D
     }
 }
 
+## A transformation matrix to enforce differnce penalty of B-spline
+## 
+## Coefs of B-spline are usually penalised with a k-order difference
+## penalty. This function returns a matrix that transform the coefs such that
+## the difference penalty on the coefs can be equivalently enforced by
+## penalising the first 'k' elements of the transformed coefs to 0. That is, if
+## \theta is the B-spline coef and its kth-order difference is penalised, then
+## it is equivalent to shrink the first 'k' elements of \theta' to zero, where
+## \theta = T %*% \theta'. This function returns the transformation matrix T.
+##
+## size: the number of coefficients/basis functions
+## k: order of difference penalty
+## return: a transformation matrix
+get_transform_bs <- function(size, k) {
+  Dmat <- get_diff_mat(size, k)
+  Tmat <- cbind(-1/sqrt(size),
+                poly(seq_len(size), degree = k - 1, simple = TRUE),
+                crossprod(Dmat, chol2inv(chol(tcrossprod(Dmat)))))
+  unname(Tmat)
+}
 
 #' Construct an equidistant B-splines design matrix
 #'
@@ -155,7 +175,7 @@ get_diff_mat <- function(size, k) {
 #' equidistant points between these two extrema. The B-splines are equidistant,
 #' i.e. no multiple knots at both ends of \eqn{x}. This function uses
 #' \code{splines::splineDesign}.
-#'
+#' 
 #' @param x predictor vector. Required.
 #' @param K number of inner knots, or a vector of all knots (interior,
 #'     boundaries, and knots outside extrema). Required.
@@ -163,8 +183,9 @@ get_diff_mat <- function(size, k) {
 #' @param EPS tolerance error.
 #'
 #' @return a list with components `design' (\code{length(x)} by \code{K + deg +
-#'     1} design matrix) and all `knots' (interior and boundaries knots, and
-#'     knots outside extrema).
+#'   1} design matrix) and all `knots' (interior and boundaries knots, and knots
+#'   outside extrema). If type == 'LMM', the transformation matrix is returned
+#'   in the 'transform' field.
 get_design_bs <- function(x, K, deg, EPS = 1e-6) {
     res <- list()
 
@@ -230,8 +251,8 @@ get_design_tpf <- function(x, K, deg) {
 ## Get a penalised least squares estimate with a given response, design matrix
 ## and penalty matrix.
 get_pls <- function(response, design, penalty) {
-    inv_term <- chol2inv(chol(crossprod(design) + crossprod(penalty)))
-    tcrossprod(inv_term, design) %*% as.vector(response)
+  inv_term <- chol2inv(chol(crossprod(design) + crossprod(penalty)))
+  tcrossprod(inv_term, design) %*% as.vector(response)
 }
 
 ## get the maximum-a-posteriori or maximum likelihood estimate from the model

@@ -188,11 +188,11 @@ fm2 <- bayes_ridge_semi(y, grp, Bmat, Xmat, Kmat = Kmat, dim_block = 0, ranef = 
                         prior = prior, size = 200)
 fm2$means
 ## full Bayesian, no fixed/random effects
-fm3 <- bayes_ridge_semi(y, grp, Bmat, NULL, Kmat = Kmat, 0, c(1), prior = prior)
-fm3$means
 load_all()
+fm3 <- bayes_ridge_semi(y, grp, Bmat, NULL, Kmat = Kmat, 0, c(1), prior = prior, size = 200)
+fm3$means
 ## emperical Bayesian, no fixed/random effects
-fm4 <- bayes_ridge_semi(y, grp, Bmat, NULL, Kmat = Kmat, prec = prec, size = 10)
+fm4 <- bayes_ridge_semi(y, grp, Bmat, NULL, Kmat = Kmat, prec = prec, size = 200)
 
 
 
