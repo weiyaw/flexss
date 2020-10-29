@@ -15,7 +15,6 @@ check_data_K <- function(data, K) {
   }
 }
 
-
 #' @export
 fit_tpf_splines <- function(data, K, deg, size, burn, init = NULL, prior = NULL) {
 
@@ -55,23 +54,16 @@ fit_tpf_splines <- function(data, K, deg, size, burn, init = NULL, prior = NULL)
 #' @param data A data frame with at least three columns (\code{x}, \code{y} and
 #'     \code{sub}). If a \code{pop} column is also given, separate mean curves
 #'     are fitted to each population.
-#'
 #' @param K A list of numbers of interior knots for the population and subject
 #'     curves. The list must contain \code{sub} and \code{pop}.
-#'
 #' @param deg The degree of the spline polynomial
-#'
 #' @param size The number of samples to be drawn from the posterior.
-#'
 #' @param burn The number of samples to burn before recording. Default to
 #'     one-tenth of \code{size}.
-#'
 #' @param ridge Use ridge regression or linear mixed effect models?
-#'
 #' @param init List of matrices of the coefficients, containing \code{sub} and
 #'     \code{pop}. The columnns of the matrices correspond to each
 #'     population/subject.
-#'
 #' @param prior List of hyperparameters of the covariance priors.
 #'
 #' @return A list with posterior means, samples and information of the basis
@@ -98,9 +90,9 @@ fit_bs_splines <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
     n_bsf_sub <- K$sub + deg + 1    # number of basis functions
     D_pop <- get_diff_mat(K$pop + deg + 1, deg + 1) # difference matrix
     D_sub <- get_diff_mat(K$sub + deg + 1, deg + 1) # difference matrix
-    Tmat_pop <- cbind(-1/sqrt(n_bsf_pop), poly(1:n_bsf_pop, deg = deg, raw = FALSE),
+    Tmat_pop <- cbind(-1/sqrt(n_bsf_pop), stats::poly(1:n_bsf_pop, deg = deg, raw = FALSE),
                       crossprod(D_pop, solve(tcrossprod(D_pop))))
-    Tmat_sub <- cbind(-1/sqrt(n_bsf_sub), poly(1:n_bsf_sub, deg = deg, raw = FALSE),
+    Tmat_sub <- cbind(-1/sqrt(n_bsf_sub), stats::poly(1:n_bsf_sub, deg = deg, raw = FALSE),
                       crossprod(D_sub, solve(tcrossprod(D_sub))))
     Bmat <- list(pop = des_info_pop$design %*% Tmat_pop,
                  sub = des_info_sub$design %*% Tmat_sub)
@@ -129,8 +121,6 @@ fit_bs_splines <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
   fm
 }
 
-
-
 #' Fit a B-spline model with population and subject-specific curves.
 #'
 #' Fit a B-spline model which gives population and subject-specific curves.
@@ -141,282 +131,427 @@ fit_bs_splines <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
 #' matrix of order \code{deg + 1}. The knots are equally spaced between
 #' \code{range(data$x)}.
 #'
+#' @param fixed A formula y ~ x1 + x2 ... specifying the response and fixed
+#'   effects
 #' @param data A data frame with at least three columns (\code{x}, \code{y} and
-#'     \code{sub}). If a \code{pop} column is also given, separate mean curves
-#'     are fitted to each population.
-#' @param K A list of numbers of interior knots for the population and subject
-#'     curves. The list must contain \code{sub} and \code{pop}.
-#' @param deg The degree of the spline polynomial
-#' @param Xmat A design matrix for the non-spline terms, i.e. fixed and random
-#'   effects.
-#' @param ranef A numeric vector of indices of the Xmat columns where the
-#'   corresponding coefficients should be treated as random effects. NULL if
-#'   everything is fixed. This option will get overridden by the 'beta' term in
-#'   `prec`.
-#' @param spline A list of formulae of splines s(x, by =, K = , deg = )
-#' @param fixed A formula ~x1 + x2 ...
-#' @param random A formula ~u1 + u2 ...
+#'   \code{sub}). If a \code{pop} column is also given, separate mean curves are
+#'   fitted to each population.
+#' @param spline A list of formulae of splines s(x, by =, K = , deg = ,
+#'   ...). See `s` for more details.
+#' @param random A formula ~ u1 + u2 ... specifying the random effect term.
 #' @param size The number of samples to be drawn from the posterior.
 #' @param burn The number of samples to burn before recording. Default to
-#'     one-tenth of \code{size}.
+#'   one-tenth of \code{size}.
 #' @param ridge Use ridge regression or linear mixed effect models?
 #' @param init List of matrices of the coefficients, containing \code{sub} and
-#'     \code{pop}. The columnns of the matrices correspond to each
-#'     population/subject.
+#'   \code{pop}. The columnns of the matrices correspond to each
+#'   population/subject.
 #' @param prior List of hyperparameters of the covariance priors.
 #'
 #' @return A list with posterior means, samples and information of the basis
 #'     functions.
 #'
 #' @export
-fit_bs_splines_v3 <- function(data, K, deg, spline, fixed = NULL, random = NULL,
-                              Xmat = NULL, ranef = NULL,
-                              size, burn, ridge = FALSE, init = NULL, prior = NULL) {
+fit_bs_splines_v4 <- function(fixed, data, spline, random = NULL,
+                              size = 1000, burn = 0,
+                              ridge = FALSE, init = NULL,
+                              prior = NULL, prec = NULL) {
 
-  check_data_K(data, K)
-  if (!("pop" %in% names(data))) data$pop <- "dme__"
+  ## check_data_K(data, K)
+  ## if (!("pop" %in% names(data))) data$pop <- "dme__"
 
   ## make grp$sub to stick together. sorting the data according to the subject
   ## index is the quickest way.
   ## grp$sub should be nested within grp$pop.
   ## the grp$pop are also sticked together, because this is potentially useful
-  fit_data <- data[order(data$pop, data$sub), ]
+  spline <- purrr::map(spline, ~`[[<-`(.x, 2, match.call(s, .x[[2]])))
+  which_sub <- which(purrr::map_lgl(spline, detect_sub))
+  stopifnot(length(which_sub) == 1)
+  spline[[which_sub]] <- tidy_sub(spline[[which_sub]])
+  fit_data <- data[reorder_data(spline[[which_sub]], data), ]
   
-  ## design matrix for population curves
-  dmatinfo_pop <- get_design_bs(fit_data$x, K$pop, deg)
-  dmatinfo_sub <- get_design_bs(fit_data$x, K$sub, deg)
-  if (ridge) {
-    ## ridge regression
-    Bmat <- list(pop = dmatinfo_pop$design, sub = dmatinfo_sub$design)
-    Kmat <- get_diff_mat(K$pop + deg + 1, deg + 1) # difference matrix
+  spline_obj <- purrr::map(purrr::compact(spline), parse_spline, data = fit_data)
+  effect_obj <- purrr::map(purrr::compact(list(fixed = fixed, random = random)),
+                           parse_effect, data = fit_data)
+  response <- parse_response(fixed, fit_data)
+  
+  if (length(setdiff(names(spline_obj), '')) != length(spline_obj)) {
+    names(spline_obj) <- paste0('spl', 1:length(spline_obj))
+    message('Spline names overriden.')
+  }
+
+  fit_Bmat <- purrr::map(spline_obj, 'model_mat')
+  fit_Xmat <- purrr::map(effect_obj, 'model_mat')
+  
+  ## check if fixed effects matrix is full column rank
+  stopifnot(det(crossprod(fit_Xmat$fixed)) > 0)
+
+  ## if no prec or prior is given
+  if (is.null(prec) && is.null(prior)) {
+    prior <- get_prior(fit_Bmat, fit_Xmat, a = 0.001, b = 0.001, v = 3)
   } else {
-    ## LMM
-    ## Tmat <- list(pop = get_transform_bs(K$pop + deg + 1, deg + 1),
-    ##              sub = get_transform_bs(K$sub + deg + 1, deg + 1))
-    ## Bmat <- list(pop = dmatinfo_pop$design %*% Tmat$pop,
-    ##              sub = dmatinfo_sub$design %*% Tmat$sub)
-    Kmat <- cbind(matrix(0, K$pop, deg + 1), diag(K$pop))
+    prior <- get_prior(fit_Bmat, fit_Xmat, a = 0.001, b = 0.001, v = 3)
+    message('For the time being, prior cannot be manually specified.')
   }
-
-  spline_mat <- purrr::map(spline, parse_spline, data = fit_data)
-  fixed_mat <- parse_effect(fixed, fit_data)
-  random_mat <- parse_effect(random, fit_data)
-
-  ## this chunck eventually to be replaced when additive model is done
-  Tmat <- list(pop = spline_mat$pop$trans_mat,
-               sub = spline_mat$sub$trans_mat)
-  Bmat <- list(pop = spline_mat$pop$model_mat,
-               sub = spline_mat$sub$model_mat)
-  Xmat <- fixed_mat$model_mat
-  Kmat <- Kmat[, -1]
   
-  if (is.null(prior)) {
-    prior <- list(theta = list(a = 0.01, b = 0.01),
-                  delta = list(a = 0.01, b = 0.01,
-                               v = deg + 2, lambda = diag(deg + 1)),
-                  ## beta = list(a = 0.001, b = 0.001),
-                  eps = list(a = 0.01, b = 0.01))
-  }
-
-  grp <- purrr::map(fit_data[c('pop', 'sub')], ~factor(.x, levels = unique(.x)))
-  ## grp_pop_names <- setNames(unique(grp$pop), unique(grp$pop))
-  pop_names <- unique(grp$pop)
-  Bmat_pop_ls <- purrr::map(pop_names, ~(Bmat$pop * (grp$pop == .x)))
-  Bmat$pop_expand <- do.call(cbind, Bmat_pop_ls)
-  colnames(Bmat$pop_expand) <- rep(pop_names, each = NCOL(Bmat$pop))
-  Kmat_expand <- block_diag(Kmat, size = length(Bmat_pop_ls))  
+  fm <- bayes_ridge_semi_v4(y = response$y,
+                            Bmat = fit_Bmat,
+                            Xmat = fit_Xmat,
+                            prior = prior,
+                            prec = prec,
+                            init = init,
+                            burn = burn,
+                            size = size)
   
-  ## check if cbind(Bmat_pop, Xmat) is full column rank
-  stopifnot(det(crossprod(cbind(Bmat$pop_expand, Xmat))) > 0)
-  
-  fm <- bayes_ridge_semi(y = fit_data$y,
-                         grp = grp,
-                         Bmat = list(pop = Bmat$pop_expand, sub = Bmat$sub),
-                         Xmat = Xmat,
-                         Kmat = Kmat_expand,
-                         dim_block = deg + 1,
-                         ranef = ranef, burn = burn, size = size, init = init,
-                         prior = prior, prec = NULL)
-
-  
-  ## convert pop coef back to array 
-  dim(fm$samples$coef$theta) <- c(NCOL(Bmat$pop), length(pop_names), size)
-  dimnames(fm$samples$coef$theta) <- list(NULL, pop_names, NULL)
-  dim(fm$means$coef$theta) <- c(NCOL(Bmat$pop), length(pop_names))
-  dimnames(fm$means$coef$theta) <- list(NULL, pop_names)
-
-  
-  fm$basis <- list(pop = NA, sub = NA)
-  if (ridge) {
-    fm$basis$pop <- list(type = 'bs-ridge',
-                         knots = dmatinfo_pop$knots,
-                         degree = deg)
-    fm$basis$sub <- list(type = 'bs-ridge',
-                         knots = dmatinfo_sub$knots,
-                         degree = deg)
-  } else {
-    fm$basis$pop <- list(type = 'bs', trans_mat = Tmat$pop,
-                         knots = dmatinfo_pop$knots,
-                         degree = deg)
-    fm$basis$sub <- list(type = 'bs', trans_mat = Tmat$sub,
-                         knots = dmatinfo_sub$knots,
-                         degree = deg)
-  }
-
   ## return the fit_data, not the original dataset
   fm$data <- data
-  ## fm$data$pop <- as.factor(fm$data$pop)
-  ## fm$data$sub <- as.factor(fm$data$sub)
 
-  ## fm$spline <- spline_mat
-  ## fm$fixed <- fixed_mat
-  ## fm$random <- random_mat
-  fm$spline <- purrr::map(spline_mat, ~`[<-`(.x, 'model_mat', NULL))
-  fm$fixed <- `[<-`(fixed_mat, 'model_mat', NULL)
-  fm$random <- `[<-`(random_mat, 'model_mat', NULL)
-  ## fm$formula <- list(spline = spline,
-  ##                    fixed = fixed,
-  ##                    random = random)
-
-  ## fm$model_mat <- list(Bmat = Bmat, Xmat = Xmat)
-  fm$pop_of_subs <- tapply(fit_data$pop, fit_data$sub,
-                           function(x) as.character(unique(x)),
-                           simplify = FALSE)
-
-  ## fm$coefficients <- 
-  ## fm$data <- dplyr::select(data, .data$x, .data$y, .data$sub, .data$pop) %>%
-  ##   dplyr::mutate(sub = as.factor(.data$sub), pop = as.factor(.data$pop))
+  ## remove model_mat and return
+  fm$spline <- purrr::map(spline_obj, ~`[<-`(.x, 'model_mat', NULL))
+  fm$effect <- purrr::map(effect_obj, ~`[<-`(.x, 'model_mat', NULL))
   class(fm) <- 'fsso'
   fm
 }
 
-
-## ff <- y ~ s(x, by = pop) + s(x, by = sub)
-
-
-## transform ~s(x, by = , K = , deg =) to bs model mat (and associated details)
-## everything is evaluted at the scope where the formula is defined
-## return: list(Bmat, Tmat, by, K, knotsdeg)
-parse_spline <- function(fo, data) {
-  if (class(fo) == 'formula' && length(fo) == 2) {
-    qo <- fo[[2]] # qo = quote
-  } else {
-    stop("spline not specified as a one-sided formula.")
+## return an appropriate hyperparameter for the variance prior
+get_prior <- function(Bmat, Xmat, a = -0.5, b = 0, v = -1, lambda = NULL) {
+  res <- list()
+  spl <- function(x) {
+    if (attr(x, 'is_sub')) {
+      lambda <- diag(attr(x, 'block_dim'))
+      list(a = a, b = b, v = v, lambda = lambda)
+    } else {
+      list(a = a, b = b)
+    }
   }
 
-  if (qo[[1]] != 's') {
-    stop("formula is not 's'.")
+  ## spline hyperparameter
+  res$spl <- purrr::map(Bmat, spl)
+  eff <- function(x) {
+    if (x == 'random') {
+      list(a = a, b = b)
+    } else {
+      NULL
+    }
   }
   
-  res <- list(formula = fo)
-  ## response and by variables are evaluated on data
-  x <- eval(qo[[2]], data)
-  res$by <- eval(qo[['by']], data)
-
-  ## the rest of argument evaluated on the env where it was defined
-  stopifnot(!is.null(qo[['K']]), !is.null(qo[['deg']]))
-  K <- eval(qo[['K']], attr(fo, '.Environment'))
-  intercept <- eval(qo[['intercept']], attr(fo, '.Environment'))
-  res$degree <- eval(qo[['deg']], attr(fo, '.Environment'))
-
-  dmatinfo <- get_design_bs(x, K, res$degree)
-  if (!is.null(intercept) && intercept) {
-    res$trans_mat <- get_transform_bs(K + res$degree + 1, res$degree + 1)
+  ## effect hyperparameter
+  if (is.null(Xmat)) {
+    res$effect <- NULL
   } else {
-    ## remove the intercept of the spline
-    res$trans_mat <- get_transform_bs(K + res$degree + 1, res$degree + 1)[, -1]
+    res$eff <- purrr::imap(Xmat, ~eff(.y))
   }
-  res$model_mat <- dmatinfo$design %*% res$trans_mat
-  res$type <- 'bs'
-  res$knots <- dmatinfo$knots
+  res$eps <- list(a = a, b = b)
   res
 }
 
-parse_effect <- function(fo, data) {
+## return a vector of indices that rearrange the data, such that data in the
+##  same level of the 'by' variable are sticked together.
+## fo: a formula
+## data: the variable in 'fo' are lookup-ed here.
+## return: a numeric vector
+reorder_data <- function(fo, data) {
+  qo <- match.call(s, fo[[2]])
+  by <- eval(qo[['by']], envir = data, enclos = attr(fo, '.Environment'))
+  order(by)
+}
+
+## detect if a formula corresponds to subject-specific curves
+## fo: a formula
+## return: boolean
+detect_sub <- function(fo, envir = attr(fo, '.Environment')) {
+  if (class(fo) == 'formula' && length(fo) == 2) {
+    if (fo[[2]][[1]] == 's') {
+      qo <- match.call(s, fo[[2]]) # qo = quote
+    } else {
+      stop("formula is not 's'.")
+    }
+  } else {
+    stop("spline not specified as a one-sided formula.")
+  }
+  isTRUE(eval(qo[['is_sub']], envir = envir))
+}
+
+## return a formula for the subject-specific spline with 'block_dim' and
+## 'intercept' arguments if they are not present. Also check if all the
+## necessary arguments are present.
+## fo: a formula
+## return: a formula
+tidy_sub <- function(fo, envir = attr(fo, '.Environment')) { 
+  qo <- fo[[2]]
+  stopifnot(eval(qo[['is_sub']], envir = envir),
+            !is.null(qo[['by']]),
+            !is.null(qo[['knots']]),
+            !is.null(qo[['degree']]))
+  
+  if (is.null(qo[['block_dim']])) {
+    qo[['block_dim']] <- eval(qo[['degree']], envir = envir) + 1
+    message('block_dim of subject spline set to ', qo[['block_dim']], '.')
+  }
+  
+  if (is.null(qo[['intercept']])) {
+    qo[['intercept']] <- TRUE
+    message('Add an intercept to the subject spline.')
+  }
+  fo[[2]] <- qo
+  fo
+}
+
+## transform formula to bs model mat (and associated details)
+## fo: ~s(x, by = , knots = , deg =, ...)
+## data: the data
+## env: envioronment which the formula should be evaluated; default to the
+## environment where the formula was defined. 'x' and 'by' are evaluated
+## at the data.
+## return: list(model_mat, trans_mat, index, degree, type, knots)
+parse_spline <- function(fo, data, envir = attr(fo, '.Environment')) {
+  if (class(fo) == 'formula' && length(fo) == 2) {
+    if (fo[[2]][[1]] == 's') {
+      qo <- match.call(s, fo[[2]]) # qo = quote
+    } else {
+      stop("formula is not 's'.")
+    }
+  } else {
+    stop("spline must be a one-sided formula.")
+  }
+
+  ## current restriction: variables must be in the data
+  stopifnot(as.character(qo[c('x', 'by')]) %in% c(names(data), 'NULL'))
+  ## eval 'x' and 'by' at data frame first, then env
+  arg_data <- purrr::map(qo[c('x', 'by')], eval, envir = data, enclos = envir)
+
+  ## eval the rest (i.e. all except the 'x' and 'by') at env only
+  rest <- setdiff(names(qo), c('', 'x', 'by'))
+  arg_env <- purrr::map(qo[rest], eval, envir = envir)
+
+  stopifnot(length(arg_data) == 2, names(arg_data) %in% c('', 'x', 'by'))
+  c(list(call = qo), do.call(s, c(arg_data, arg_env)))
+  ## s(x, by, knots, degree, intercept, penalty, type = 'bs')
+}
+
+
+
+#' Return the design matrix of a spline
+#'
+#' Return the design matrix of a spline.
+#'
+#' For non-subject-specific splines, the first 'degree + 1' terms correspond to
+#' the coefficients of a polynomial of 'degree' and are not penalised. The rest
+#' of the coefficients are shrunk to zero so that when all of these terms are
+#' zero, the fit is a polynomial.
+#'
+#' Since the polynomial (which includes lines parallel to the x-axis) terms are
+#' not penalised, the intercept term in the polynomial is removed by default to
+#' avoid spanning the same space as the (potential) main effect
+#' terms. Therefore, the intercept should be added manually either by setting
+#' 'intercept = TRUE' or adding it as fixed effects. For subject-specific
+#' splines, all the coefficients are penalised, so including an intercept will
+#' not result in an unidentifiable model.
+#'
+#' Due to the way which B-spline basis is parameterised and transformed, it is
+#' advisable to treat the first 'degree + 1' coefficients of the
+#' subject-specific spline as correlated Gaussian random effects (i.e. with full
+#' covariance matrix). The rest of the spline coefficients (subject-specific or
+#' otherwise) are independent Gaussian. 'block_dim' is only applicable for the
+#' subject-specific spline.
+#'
+#' @param x a variable of the design points.
+#' @param by a grouping variable, or if NULL, a common spline is fitted.
+#' @param knots the number of internal knots.
+#' @param degree the degree of spline.
+#' @param intercept TRUE/FALSE whether an intercept should be included in the
+#'   spline. By default, the intercept is removed unless this is a
+#'   subject-specific spline.
+#' @param type the type of basis function. Currently only B-spline ('bs') is
+#'   supported.
+#' @param is_sub is this the subject-specific curves?
+#' @param block_dim the (first) number of terms in the subject-specific curves
+#'   that should be treated as a block, rather than i.i.d. Only applicable to
+#'   subject-specific curves and default to `degree` + 1.
+s <- function(x, by = NULL, knots = NULL, degree = NULL, intercept = NULL,
+              type = 'bs', is_sub = FALSE, block_dim = NULL) {
+
+  res <- list(degree = degree,
+              intercept = intercept,
+              type = type)
+  ## a list of positions of the data points for each group
+  if (type != 'bs') {
+    stop('basis type not implemented yet.')
+  }
+
+  stopifnot(is.numeric(knots), length(knots) == 1)
+  dmatinfo <- get_design_bs(x, knots, degree)
+
+  ## if intercept is true, add an intercept
+  if (!is.null(intercept) && intercept) {
+    res$trans_mat <- get_transform_bs(knots + degree + 1, degree + 1)
+    cp <- cbind(matrix(0, knots, degree + 1), diag(knots)) # compact penalty
+  } else {
+    ## remove the intercept of the spline
+    res$trans_mat <- get_transform_bs(knots + degree + 1, degree + 1)[, -1]
+    cp <- cbind(matrix(0, knots, degree), diag(knots)) # compact penalty
+  }
+
+  cmm <- dmatinfo$design %*% res$trans_mat # compact model matrix
+  if (is_sub) {
+    ## check if sub index is continuous, bcoz assuming Bmat$sub is block diagonal
+    index <- split(1:length(by), by)
+    level <- names(index)
+    stopifnot(purrr::map_lgl(index,
+                             ~all(.x == seq.int(.x[1], len = length(.x)))))
+    res$model_mat <- purrr::map(index, ~cmm[.x, ])
+    attr(res$model_mat, 'block_dim') <- block_dim
+    attr(res$model_mat, 'index') <- index
+  } else {
+    if (is.null(by)) {
+      level <- NA
+      res$model_mat <- cmm
+    } else {
+      level <- unique(by)
+      smm_ls <- purrr::map(level, # sparse model matrix
+                           ~Matrix::Matrix(cmm * (by == .x), sparse = TRUE))
+      res$model_mat <- do.call(cbind, smm_ls)
+    }
+    attr(res$model_mat, 'penalty') <- cp
+    stopifnot(NCOL(cmm) == NCOL(cp))
+  }
+  res$knots <- dmatinfo$knots
+
+  ## these four attributes are required for Gibbs sampler
+  attr(res$model_mat, 'spl_dim') <- NCOL(cmm)
+  attr(res$model_mat, 'is_sub') <- is_sub
+  attr(res$model_mat, 'level') <- as.character(level)
+  res
+}
+
+## parse the formula to return a list of a term object and a vector of response.
+parse_response <- function(fo, data, envir = attr(fo, '.Environment')) {
+  if (is.null(fo)) {
+    stop("response required.")
+  }
+  mt <- stats::terms(fo, data = data)[0] # mt: model terms
+  if (attr(mt, 'response') == 0) {
+    stop("response required.")
+  }
+  
+  ## current restriction: variables must be in the data
+  stopifnot(as.character(attr(mt, 'variables')[[2]]) %in% names(data))
+  list(terms = mt,
+       y = eval(attr(mt, 'variables')[[2]], data, envir))
+}
+
+## parse the formula to return a list of a term object, model matrix, and some
+## attributes useful for predicting new data points.
+parse_effect <- function(fo, data, envir = attr(fo, '.Environment')) {
   if (is.null(fo)) {
     NULL
   } else {
     ## mt: model term
-    mt <- terms(fo, data = data)
+    mt <- stats::delete.response(stats::terms(fo, data = data))
     stopifnot(attr(mt, 'response') == 0) # must not have response term in the formula
+    
+    eval_variable <- eval(attr(mt, 'variable'), data[1, ], envir)
+    attr(mt, 'dataClasses') <- purrr::map_chr(eval_variable, stats::.MFclass)
+    names(attr(mt, 'dataClasses')) <- as.character(attr(mt, 'variable')[-1])
 
-    variable <- attr(terms(fo), 'variable')
-    attr(mt, 'dataClasses') <- eval(variable, purrr::map(data, .MFclass))
-    mode(attr(mt, 'dataClasses')) <- 'character'
-    names(attr(mt, 'dataClasses')) <- as.character(variable[-1])
+    ## current restriction: variables must be in the data
+    stopifnot(attr(mt, 'term.labels') %in% names(data))
+    ## mm: model matrix, all terms must exist in data
+    mm <- stats::model.matrix(mt, data)
 
-    ## mm: model matrix
-    mm <- model.matrix(mt, data)
     list(terms = mt,
          model_mat = mm,
          assign = attr(mm, 'assign'),
          contrasts = attr(mm, 'contrasts'),
-         xlevels = .getXlevels(mt, data))
-    ## attr(res$terms, 'dataClasses')
+         xlevels = stats::.getXlevels(mt, data))
   }
 }
-
-
 
 ## efficient prediction calculation of factor variables
 ## model_mat: the model matrix to be multiplied
-## grp: a vector specifying the group which each row of model matrix corresponds to
+## by: a vector specifying the group which each row of model matrix corresponds to
 ## coef: a matrix of spline coef. colnames must have unique(grp)
-predict_grp <- function(model_mat, grp, coef) {
-
-  stopifnot(unique(grp) %in% colnames(coef),
-            length(grp) == NROW(model_mat))
-
-  res <- rep(NA, length.out = length(grp))
-
-  for (l in unique(grp)) {
-    idx <- grp == l
-    res[idx] <- model_mat[idx, ] %*% coef[, l]
+predict_grp <- function(model_mat, by, coef) {
+  
+  if (is.null(by)) {
+    stopifnot(NCOL(coef) == 1)
+    as.numeric(model_mat %*% coef)
+  } else {
+    stopifnot(unique(by) %in% colnames(coef),
+              length(by) == NROW(model_mat))
+    res <- rep(NA, length.out = length(by))
+    for (l in unique(by)) {
+      idx <- by == l
+      res[idx] <- model_mat[idx, ] %*% coef[, as.character(l)]
+    }
+    res
   }
-  res
 }
 
 
-
-
-## predict with posterior means
-## need a function to do posterior predictive check
-predict.fsso <- function(object, newdata = NULL) {
-
+#' Predict with posterior mean
+#'
+#' Return prediction with the posterior mean of the regression coefficients.
+#' 
+#' @param object an 'fsso' object.
+#' @param newdata a data frame with all the covariate required for prediction.
+#' @param level a string specify the name of the spline. Only the component
+#'   correponding to that spline is returned together with the effect terms).
+#' 
+#' @export
+predict.fsso <- function(object, newdata = NULL, level = NULL) {
   ## temporary measure. change the output samples in the future
-  names(object$means$coef) <- c('pop', 'sub', 'beta')
+  ## names(object$means$coef) <- c('pop', 'sub', 'fixed')
     
   if (is.null(newdata)) {
     newdata <- object$data
   }  
 
-  predict_spl_i <- function(spl, spl_name) {
-    x <- eval(spl$formula[[2]][[2]], newdata)
+  predict_spl_i <- function(spl, coefs) {
+    x <- eval(spl$call[['x']], newdata, baseenv())
+    ## x <- newdata[[as.character(spl$call[['x']])]]
     model_mat <- get_model_mat(x, spl)
-    grp <- eval(spl$formula[[2]][['by']], newdata)
-    predict_grp(model_mat, grp, object$means$coef[[spl_name]])
+    grp <- eval(spl$call[['by']], newdata, baseenv())
+    ## grp <- newdata[[as.character(spl$call[['by']])]]
+    predict_grp(model_mat, grp, coefs)
   }
-  
-  res1 <- purrr::imap(object$spline, predict_spl_i)
 
-  predict_eff_i <- function(effect, newdata, beta) {
-    if (is.null(effect)) {
+  ## make sure the levels are valid
+  stopifnot(!is.null(names(object$spline)))
+  if (is.null(level)) {
+    level <- names(object$spline)
+  }
+  stopifnot(level %in% names(object$spline))
+
+  res1 <- purrr::map2(object$spline[level],
+                      object$means$coef$spline[level],
+                      predict_spl_i)
+
+  predict_eff_i <- function(eff, coefs) {
+    if (is.null(eff)) {
       0
     } else {
-      mt <- terms(effect)
-      mf <- model.frame(mt, newdata, xlev = effect$xlevels)
-      .checkMFClasses(attr(mt, 'dataClasses'), mf)
-      mm <- model.matrix(mt, mf, contrast.arg = effect$contrasts)
-      stopifnot(colnames(mm) == names(beta))
-      as.numeric(mm %*% beta)
+      mt <- stats::delete.response(stats::terms(eff))
+      stopifnot(attr(mt, 'term.labels') %in% colnames(newdata))
+      mf <- stats::model.frame(mt, newdata, xlev = eff$xlevels)
+      stats::.checkMFClasses(attr(mt, 'dataClasses'), mf)
+      mm <- stats::model.matrix(mt, mf, contrast.arg = eff$contrasts)
+      stopifnot(colnames(mm) == names(coefs))
+      as.numeric(mm %*% coefs)
     }
   }
 
-  res2 <- list(fixed = predict_effect(object[['fixed']], newdata, object$means$coef$beta))
+  stopifnot(names(object$effect) == names(object$means$coef$effect))
+  res2 <- purrr::map2(object$effect,
+                      object$means$coef$effect[names(object$effect)],
+                      predict_eff_i)
 
-  c(res1, res2)
-  ## purrr::reduce(c(res1, res2), `+`)
-
+  ## c(res1, res2)
+  if (is.null(level)) {
+    purrr::reduce(c(res1, res2), `+`)
+  } else {
+    purrr::reduce(c(res1[level], res2), `+`)
+  }
 }
 
 

@@ -18,8 +18,9 @@ boundaries, and knots outside extrema). Required.}
 }
 \value{
 a list with components `design' (\code{length(x)} by \code{K + deg +
-    1} design matrix) and all `knots' (interior and boundaries knots, and
-    knots outside extrema).
+  1} design matrix) and all `knots' (interior and boundaries knots, and knots
+  outside extrema). If type == 'LMM', the transformation matrix is returned
+  in the 'transform' field.
 }
 \description{
 \code{get_design_bs} returns an equidistant B-splines design matrix without

@@ -24,7 +24,7 @@ initialise_with_pls <- function(init, para, grp, pls) {
     }
   }
   if (is.null(init$sub)) {
-    init$sub <- matrix(stats::rnorm(n_terms_sub * n_subs) * 0.01, n_terms_sub, n_subs,
+    init$sub <- matrix(rnorm(n_terms_sub * n_subs) * 0.01, n_terms_sub, n_subs,
                        dimnames = list(NULL, levels(grp$sub)))
   } else {
     if (all(dim(init$sub) == c(n_terms_sub, n_subs))) {
@@ -233,23 +233,23 @@ update_prec <- function(coef, resids, para, prior) {
   ## update sigma^2_theta
   shape_pop <- 0.5 * n_pops * rank_K + ig_a$pop
   rate_pop <- 0.5 * sum((Kmat %*% coef$pop)^2) + ig_b$pop
-  prec$pop <- stats::rgamma(1, shape = shape_pop, rate = rate_pop)
+  prec$pop <- rgamma(1, shape = shape_pop, rate = rate_pop)
 
   ## update Sigma_dev1
   df_sub1 <- iw_v + n_subs
   scale_sub1 <- iw_lambda + tcrossprod(coef$sub[1:dim_sub1, , drop = FALSE])
   inv_scale_sub1 <- chol2inv(chol(scale_sub1))
-  prec$sub1 <- stats::rWishart(1, df = df_sub1, Sigma = inv_scale_sub1)[, , 1]
+  prec$sub1 <- rWishart(1, df = df_sub1, Sigma = inv_scale_sub1)[, , 1]
 
   ## update sigma^2_dev2
   shape_sub2 <- 0.5 * n_subs * (n_terms_sub - dim_sub1) + ig_a$sub2
   rate_sub2 <- 0.5 * sum(coef$sub[-(1:dim_sub1), ]^2) + ig_b$sub2
-  prec$sub2 <- stats::rgamma(1, shape = shape_sub2, rate = rate_sub2)
+  prec$sub2 <- rgamma(1, shape = shape_sub2, rate = rate_sub2)
   
   ## update sigma^2_epsilon
   shape_eps <- 0.5 * n_samples + ig_a$eps
   rate_eps <- 0.5 * crossprod(resids) + ig_b$eps
-  prec$eps <- stats::rgamma(1, shape = shape_eps, rate = rate_eps)
+  prec$eps <- rgamma(1, shape = shape_eps, rate = rate_eps)
 
   prec
 }

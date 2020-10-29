@@ -55,7 +55,7 @@ extract_coef_v3 <- function(model, plot_type) {
 
 ## calculate model matrix given x and a basis information
 get_model_mat <- function(x, binfo) {
-
+  
   knots <- binfo$knots
   names(knots) <- NULL
   deg <- binfo$degree
@@ -112,7 +112,7 @@ get_plotdat_thin <- function(samples, model_mat, plot_x, thin = 10) {
   colnames(thin_y) <- thin_idx
   prob <- c(0.25, 0.75)
   prob_outer <- c(0.05, 0.95)
-  apply(thin_y, 1, function(x) quantile(x, c(prob, prob_outer))) %>%
+  apply(thin_y, 1, function(x) stats::quantile(x, c(prob, prob_outer))) %>%
     t() %>%
     tibble::as_tibble() %>%
     dplyr::mutate(x = plot_x)

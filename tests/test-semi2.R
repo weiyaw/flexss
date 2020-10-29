@@ -1,0 +1,83 @@
+library(magrittr)
+
+## fit the model with some dummy data (i.e. fit with the truth)
+## generate some dummy data
+rm(list = ls())
+set.seed(1)
+Bmat <- list(pop = matrix(sample(1:5, 500 * 4, TRUE), 500, 4),
+             sub = matrix(sample(1:5, 500 * 4, TRUE), 500, 4))
+Xmat <- matrix(sample(1:5, 500 * 4, TRUE), 500, 4)
+## each subject name must be unique, no nesting! 2 population and 5 subjects, 2
+## subs in pop 1, 3 subs in pop 2, 100 samples for each sub
+grp <- list(pop = c(rep(1, 200), rep(2, 300)),
+            sub = rep(1:5, each = 100))
+
+theta <- setNames(1:2, 1:2) %>% purrr::map(~rnorm(4))   # N(0, diag(4))
+delta <- setNames(1:5, 1:5) %>% purrr::map(~rnorm(4)) # N(0, diag(4))
+beta <- rnorm(4) # N(0, diag(4))
+
+## y = Bmat$pop * theta + Bmat$sub * delta + Xmat * beta + Gaussian error
+## grp$pop and grp$sub must be sorted, o/w the resulting y will not match due to
+## split.data.frame
+ord <- order(grp$pop, grp$sub)
+Bmat <- purrr::map(Bmat, ~.x[ord,])
+Xmat <- Xmat[ord, ]
+grp <- purrr::map(grp, ~factor(.x[ord], unique(.x)))
+
+pop_term <- split.data.frame(Bmat$pop, grp$pop) %>%
+  purrr::map2(theta, ~as.numeric(.x %*% .y)) %>%
+  unlist(use.names = FALSE)
+sub_term <- split.data.frame(Bmat$sub, grp$sub) %>%
+  purrr::map2(delta, ~as.numeric(.x %*% .y)) %>%
+  unlist(use.names = FALSE)
+beta_term <- Xmat %*% beta
+error <- rnorm(50) # N(0, diag(50))
+truth <- pop_term + sub_term + beta_term
+y <- truth + error
+
+spl <- list()
+## new Bmat
+spl$pop <- purrr::map(unique(grp$pop), ~`[<-`(Bmat$pop, grp$pop != .x, , 0)) %>%
+  {do.call(cbind, .)}
+
+attr(spl$pop, 'index') <- split(1:NROW(Bmat$pop), grp$pop)
+attr(spl$pop, 'spl_dim') <- NCOL(spl$pop) / length(attr(spl$pop, 'index'))
+attr(spl$pop, 'levels') <- names(attr(spl$pop, 'index'))
+attr(spl$pop, 'penalty') <- diag(4)
+attr(spl$pop, 'is_sub') <- FALSE
+
+spl$sub <- split.data.frame(Bmat$sub, grp$sub)
+attr(spl$sub, 'index') <- split(1:NROW(Bmat$sub), grp$sub)
+attr(spl$sub, 'spl_dim') <- NCOL(Bmat$sub)
+attr(spl$sub, 'levels') <- names(attr(spl$sub, 'index'))
+attr(spl$sub, 'block_dim') <- 2
+attr(spl$sub, 'is_sub') <- TRUE
+
+## eff1: random, eff2: fixed
+eff <- list(eff1 = `colnames<-`(Xmat[, 1:2], c('a', 'b')),
+            eff2 = `colnames<-`(Xmat[, 3:4], c('c', 'd')))
+
+## ## new Kmat
+## Kmat <- Matrix::bdiag(diag(4), diag(4))
+
+## true precision matrix, 0 entry for fixed effects
+prec <- list(spl = list(pop = diag(c(0, 0, 1, 1)),
+                        sub = diag(4)),
+             eff = list(eff1 = diag(c(1, 1)),
+                        eff2 = diag(c(0, 0))),
+             eps = 1)
+
+prior <- list(spl = list(pop = list(a = -0.5, b = 0),
+                         sub = list(a = -0.5, b = 0,
+                                    v = -1, lambda = diag(attr(spl$sub, 'block_dim')))),
+              eff = list(eff1 = list(a = -0.5, b = 0),
+                         eff2 = NULL),
+              eps = list(a = -0.5, b = 0))
+
+load_all()
+fm1 <- bayes_ridge_semi_v4(y, spl, eff, prior = prior, prec = NULL, size = 100)
+
+fm2 <- bayes_ridge_semi_v4(y, spl, eff, prior = NULL, prec = prec, size = 500)
+
+str(fm1)
+acf(fm1$samples$coef$effect$eff1[1, ])

@@ -1,0 +1,935 @@
+## inverse of a symmetrical, positive definite matrix
+pdinv <- function(x) {
+  ## HERE: NUMERICAL ISSUE
+  stopifnot(Matrix::isSymmetric(x, tol = .Machine$double.eps * 10000))
+  ## use 'dpoMatrix' only if we can guarantee x is pd
+  ## xpd <- as(Matrix::forceSymmetric(x), 'dpoMatrix')
+  Matrix::forceSymmetric(Matrix::solve(x))
+}
+
+## product of the quadratic, x %*% A %*% t(x)
+tquadprod <- function(x, A) {
+  res <- Matrix::tcrossprod(x %*% A, x)
+  ## stopifnot(Matrix::isSymmetric(res, tol = .Machine$double.eps * 10000))
+  Matrix::forceSymmetric(res)
+}
+
+## Recursively check if the list structure matches. Also check if the names
+## match, if the names are present.
+is_matchls <- function(ls1, ls2) {
+  if (is.list(ls1) && is.list(ls2)) {
+    length(ls1) == length(ls2) &&
+      all(names(ls1) == names(ls2),
+          purrr::map2_lgl(ls1, ls2, is_matchls))
+  } else if (is.list(ls1) || is.list(ls2)) {
+    warning('unbalance list.')
+    FALSE
+  } else {
+    TRUE
+  }
+}
+
+## ## the rows of Kmat must be independent
+## check_Kmat <- function(Kmat) {
+##   if (abs(Matrix::det(Matrix::tcrossprod(Kmat))) < 1e-10) {
+##     warning('The rows of Kmat may not be independent.')
+##   }
+## }
+
+## check_prec_beta <- function(prec_beta, dim_beta) {
+##   if (!is.null(prec_beta)) {
+##     message('prec$beta specified.')
+##     stopifnot(is.matrix(prec_beta),
+##               dim(prec_beta) == dim_beta,
+##               is_precision(prec_beta))
+##   }
+## }
+## check_prec <- function(prec, para) {
+##   ## display specified precision
+##   if (!is.null(prec$theta)) {
+##     message('prec$theta specified.')
+##     stopifnot(is.matrix(prec$theta),
+##               dim(prec$theta) == para$dim_theta,
+##               is_precision(prec$theta))
+##   }
+
+##   if (!is.null(prec$delta)) {
+##     message('prec$delta specified.')
+##     stopifnot(is.matrix(prec$delta),
+##               dim(prec$delta) == para$dim_delta,
+##               is_precision(prec$delta))
+##   }
+
+##   if (!is.null(prec$beta)) {
+##     if (is.null(para$dim_beta)) {
+##       message("prec$beta specified but irrelavent. No fixed/random effects.")
+##     } else {
+##       message('prec$beta specified.')
+##       stopifnot(is.matrix(prec$beta),
+##                 dim(prec$beta) == para$dim_beta,
+##                 is_precision(prec$beta))
+##     }
+##   }
+
+##   if (!is.null(prec$eps)) {
+##     message('prec$eps specified.')
+##     stopifnot(is.numeric(prec$eps),
+##               length(prec$eps) == 1,
+##               prec$eps > 0)
+##   }
+## }
+
+
+
+## ## is this a precision matrix (in the context of this model)? The precision can
+## ## be semi-positive definite.
+## is_precision <- function(x) {
+##   all(isSymmetric(x), eigen(x, TRUE)$values >= 0)
+## }
+
+## init_theta <- function(theta, pop_names, dim_theta, n_pops, pls) {
+
+##   ## use pls if initial values not supplied
+##   if (is.null(theta)) {
+##     theta <- matrix(pls, dim_theta, n_pops)
+##   } else {
+##     message("Initial theta supplied.")
+##     if (!all(is.matrix(theta), dim(theta) == c(dim_theta, n_pops))) {
+##       stop("Invalid theta dimension. Must be a matrix")
+##     }
+##   }
+
+##   ## make sure the column names are correct
+##   if (is.null(colnames(theta))) {
+##     colnames(theta) <- pop_names
+##     theta
+##   } else {
+##     theta[, pop_names]
+##   }
+## }
+
+## init_delta <- function(delta, sub_names, dim_delta, n_subs) {
+
+##   ## use Gaussian rv if initial values not supplied
+##   if (is.null(delta)) {
+##     gauss_rv <- rnorm(dim_delta * n_subs) * 0.01
+##     delta <- matrix(gauss_rv, dim_delta, n_subs)
+##   } else {
+##     message("Initial delta supplied.")
+##     if (!all(is.matrix(delta), dim(delta) == c(dim_delta, n_subs))) {
+##       stop("Invalid delta dimension. Must be a matrix.")
+##     }
+##   }
+
+##   ## make sure the column names are correct
+##   if (is.null(colnames(delta))) {
+##     colnames(delta) <- sub_names
+##     delta
+##   } else {
+##     delta[, sub_names]
+##   }
+## }
+
+## ## beta can be NULL, named (ordinary or column) vector
+## init_beta <- function(beta, beta_names, dim_beta) {
+  
+##   ## use Gaussian rv if initial values not supplied
+##   if (is.null(dim_beta)) {
+##     return(NULL)
+##   } else if (is.null(beta)) {
+##     beta <- rnorm(dim_beta) * 0.01
+##   } else {
+##     message("Initial beta supplied.")
+##     if (!any(is.vector(beta, mode = 'numeric'),
+##              all(is.matrix(beta), dim(beta) == c(dim_beta, 1)))) {
+##       stop("Invalid beta dimension. Must be a vector/column vector.")
+##     }
+##   }
+##   ## make sure beta is a column vector
+##   beta <- as.matrix(beta)
+
+##   ## make sure the row names are correct
+##   if (is.null(rownames(beta))) {
+##     rownames(beta) <- beta_names
+##     beta
+##   } else {
+##     beta[beta_names, ]
+##   }
+## }
+
+## ## datals: list(Bmat_pop: matrix, Bmat_sub: list of matrix, Xmat: matrix)
+## ## theta, beta: col matrix
+## ## delta: matrix
+## ## return: col matrix
+## init_yhat <- function(datals, theta, delta, beta, debug = FALSE) {
+  
+##   if (debug) {
+##   }
+##   f_init <- calc_f(datals$Bmat_pop, theta)
+##   g_init <- purrr::imap(datals$Bmat_sub, ~as.vector(.x %*% delta[, .y]))
+##   Xb_init <- calc_Xb(datals$Xmat, beta)
+
+##   update_yhat(f_init, unlist(g_init, use.names = FALSE), Xb_init)
+## }
+
+## ## initialise theta with a penalised LS estimate, and delta with rnorms with small sd
+## initialise_with_pls_v3 <- function(init, Bmat, Xmat, debug = FALSE) {
+
+##   ## init: NULL or list(theta, delta, beta); any of the element can be NULL
+
+##   ## theta <- init_theta(init$theta, theta_names, para$dim_theta, para$n_pops, pls)
+##   get_pls <- function(X, y) {
+##     if (is.null(attr(X, 'penalty'))) {
+##       XtX <- Matrix::crossprod(X)
+##     } else {
+##       XtX <- Matrix::crossprod(X) + Matrix::crossprod(attr(X, 'penalty'))
+##     }
+##     Matrix::solve(XtX) %*% Matrix::crossprod(X, y)
+##   }
+
+##   theta <- as.matrix(stats::rnorm(para$dim_theta)) # just for prototyping
+
+##   ## delta <- init_delta(init$delta, delta_names, para$dim_delta, para$n_subs)
+##   delta <- matrix(stats::rnorm(para$dim_delta * para$n_subs),
+##                   para$dim_delta, para$n_subs,
+##                   dimnames = list(NULL, names(datals$Bmat_sub))) # just for prototyping
+
+##   ## beta <- init_beta(init$beta, para$beta_names, para$dim_beta)
+##   beta <- if(is.null(para$dim_beta)) {
+##     NULL # just for prototyping
+##   } else {
+##     as.matrix(stats::rnorm(para$dim_beta)) # just for prototyping
+##   }
+
+##   yhat <- init_yhat(datals, theta, delta, beta, debug)
+
+##   ## the elements should have the same format as the output from update_coefs
+##   list(theta = theta, delta = delta, beta = beta, yhat = yhat)
+## }
+
+## initialise coef with some random Gaussian rv.
+initialise_v4 <- function(Bmat, Xmat, y) {
+  ## HERE, THIS SHIT INITIALISATION NEED TO BE REPLACED BY SOMETHING BETTER
+  res <- list(spl = purrr::map(Bmat, ~structure(matrix(stats::rnorm(attr(.x, 'spl_dim') *
+                                                               length(attr(.x, 'level'))),
+                                                       attr(.x, 'spl_dim'),
+                                                       length(attr(.x, 'level'))),
+                                                is_sub = attr(.x, 'is_sub'),
+                                                penalty = attr(.x, 'penalty'),
+                                                block_dim = attr(Bmat[[1]], 'block_dim'))),
+              eff = purrr::map(Xmat, ~structure(stats::rnorm(NCOL(.x)))))
+  res$yhat <- y + stats::rnorm(y)
+  res
+}
+
+## Bmat: list of matrix
+## return: list of matrix
+calc_xBs_v4 <- function(Bmat_sub) {
+  ## index <- attr(Bmat_sub, 'index')
+  purrr::map(Bmat_sub, Matrix::crossprod)
+  ## purrr::map(index, ~Matrix::crossprod(Bmat_sub[index, index]))
+}
+
+## ## xBs: list of matrix
+## ## kprec: list(sub: matrix, eps: numeric)
+## ## return: list of matrix
+## calc_Lmat_inv <- function(xBs, kprec) {
+##   calc_Lmat_i_inv <- function(xBs_i) {
+##     Lmat_i <- xBs_i + kprec$delta / kprec$eps
+##     pdinv(Lmat_i) # L_i > 0
+##   }
+##   purrr::map(xBs, calc_Lmat_i_inv)
+## }
+
+
+## ## Phi: matrix
+## ## Bmat_pop: matrix
+## ## return: matrix (must match the entries in Bmat_pop)
+## calc_PhixB <- function(Phi, Bmat_pop) {
+##   ## Bmat_pop_ls <- split.data.frame(Bmat_pop, grp_sub)
+##   ## PhixB_ls <- purrr::map2(Phi, Bmat_pop_ls, `%*%`) # Phi_i is symmetrical
+##   ## do.call(rbind, PhixB_ls)
+##   Phi %*% Bmat_pop
+## }
+
+## ## Bmat_pop: matrix
+## ## PhixB: matrix
+## ## kprec: list(theta: matrix, eps: numeric)
+## ## return: matrix
+## calc_Nmat_inv <- function(Bmat_pop, PhixB, kprec) {
+##   Nmat <- Matrix::crossprod(Bmat_pop, PhixB) + kprec$theta / kprec$eps
+##   pdinv(Nmat) # N > 0
+## }
+
+## ## Phi: matrix
+## ## PhixB: matrix
+## ## return: matrix
+## calc_Psy <- function(Phi, PhixB, Nmat_inv) {
+##   Phi - tquadprod(PhixB, Nmat_inv)
+##   ## calc_Psy_i <- function(Phi_i, PhixBs_i, Nmat_i_inv) {
+##   ##   Phi_i - tcrossprod(PhixBs_i %*% Nmat_i_inv, PhixBs_i) # Phi_i == t(Phi_i)
+##   ## }
+##   ## purrr::pmap(list(Phi, PhixBs, Nmat_inv), calc_Psy_i)
+## }
+
+## ## Psy: matrix
+## ## Bmat_pop: matrix
+## ## return: matrix
+## calc_PsyxX <- function(Psy, Xmat) {
+##   if (is.null(Xmat)) {
+##     NULL
+##   } else {
+##     Psy %*% Xmat
+##   }
+## }
+
+## Phi: matrix / list of matrix if Phi_1
+## Xmat: matrix
+## return: matrix
+calc_PhixX_v4 <- function(Phi, Xmat) {
+  if (is.list(Phi)) {
+    Phi <- Matrix::.bdiag(Phi)
+  }
+  Phi %*% Xmat
+}
+
+## Xmat: matrix
+## PhixX: matrix
+## kprec: list(beta: matrix, eps: numeric)
+## return: matrix
+calc_Qmat_inv_v4 <- function(Xmat, PhixX, Sigma_inv, eps_inv) {
+  if (is.null(Xmat) || is.null(PhixX)) {
+    NULL
+  } else {
+    XtX <- Matrix::crossprod(Xmat, PhixX)
+    ## if (is.null(Sigma_inv)) {
+    ##   ## do nothing, if it's a fixed effect/spline
+    ##   pdinv(XtX)
+    ## } else {
+    ## add precisions if it's random
+    spl_dim <- attr(Xmat, 'spl_dim')
+    if (is.null(spl_dim)) {
+      ## if it's an effect Xmat (i.e. Xmat)
+      pdinv(XtX + Sigma_inv / eps_inv)
+    } else {
+      ## if it's a spline Xmat (i.e. Bmat)
+      for (i in seq_along(attr(Xmat, 'level'))) {
+        index <- seq.int(to = spl_dim * i, length.out = spl_dim)
+        XtX[index, index] <- XtX[index, index] + Sigma_inv / eps_inv
+      }
+      pdinv(XtX)
+      ## }
+    }
+  }
+}
+
+## Phi: matrix / list of matrix if Phi_2
+## PhixB: matrix / list of matrix if Phi_1
+## Qmat_inv: matrix / list of matrix if Phi_1
+## return: matrix / list of matrix if Phi_1
+calc_Phi_v4 <- function(Phi, PhixX, Qmat_inv) {
+  if (is.null(Phi)) {
+    ## calc base case Phi_1, PhixX and Qmat_inv are lists
+    stopifnot(is.list(PhixX), is.list(Qmat_inv),
+              names(PhixX) == names(Qmat_inv))
+    calc_Phi0i <- function(PhixX, Qmat_inv) {
+      res <- -1 * tquadprod(PhixX, Qmat_inv)
+      res[row(res) == col(res)] <- Matrix::diag(res, names = FALSE) + 1
+      ## stopifnot(Matrix::isSymmetric(res, tol = .Machine$double.eps * 10000))
+      Matrix::forceSymmetric(res)
+    }
+    purrr::map2(PhixX, Qmat_inv, calc_Phi0i)
+  } else {
+    if (is.list(Phi)) {
+      ## when computing Phi_2, Phi_1 is a list
+      Phi <- Matrix::.bdiag(Phi)
+    }
+    ## computing Phi_2, 3, 4, ...
+    Phi - tquadprod(PhixX, Qmat_inv)
+  }
+}
+
+## calculate partial residual
+## presid: col matrix
+## Xb: col matrix
+calc_presid_v4 <- function(presid, Xb) {
+  if (is.null(Xb)) {
+    presid
+  } else {
+    ## if (is.list(presid) && is.list(Xb)) {
+    ##   stopifnot(is.list(presid), is.list(Xb))
+    ##   purrr::map2(presid, Xb, ~as.matrix(.x - .y))
+    ## } else {
+    presid - Xb
+    ## }
+  }
+}
+
+## calculate Rmat
+## presid: col matrix
+## PhixX: matrix / list of matrix
+## index: a list of index to split presid
+## return: row matrix / list of row matrix (if index != NULL)
+calc_Rmat_v4 <- function(presid, PhixX, index = NULL) {
+  if (is.list(PhixX)) {
+    stopifnot(!is.null(index), names(index) == names(PhixX))
+    ## split presid into a list of numeric vectors and crossprod
+    purrr::map2(index, PhixX, ~Matrix::crossprod(presid[.x, ], .y))
+  } else {
+    Matrix::crossprod(presid, PhixX)
+  }
+}
+
+## draw samples from joint conditional posterior
+## Qmat_inv: matrix / list of matrix
+## Rmat: row matrix / list of row matrix
+## eps_inv: numeric
+## return: numeric / list of numeric
+gen_coefs <- function(Qmat_inv, Rmat, eps_inv) {
+  gen_coefs_i <- function(x, y) {
+    mu <- as.numeric(Matrix::tcrossprod(x, y))
+    Sigma <- as.matrix(x / eps_inv)
+    MASS::mvrnorm(1, mu, Sigma)
+  }
+  if (is.list(Qmat_inv) || is.list(Rmat)) {
+    stopifnot(is.list(Qmat_inv), is.list(Rmat),
+              names(Qmat_inv) == names(Rmat))
+    purrr::map2(Qmat_inv, Rmat, gen_coefs_i)
+  } else {
+    gen_coefs_i(Qmat_inv, Rmat)
+  }
+}
+
+## Xmat: matrix / list of matrix
+## beta: col matrix / list of col matrix
+## return: col matrix / list of matrix
+calc_Xb_v4 <- function(Xmat, beta) {
+  stopifnot(!is.null(Xmat), !is.null(beta))
+  if (is.list(Xmat) || is.list(beta)) {
+    stopifnot(is.list(Xmat), is.list(beta),
+              names(Xmat) == names(beta))
+    purrr::map2(Xmat, beta, ~as.numeric(.x %*% .y))
+  } else {
+    Xmat %*% beta
+  }
+}
+
+## ## Qmat_inv: matrix
+## ## Rmat: matrix
+## ## kprec: list(eps: numeric)
+## ## return: col matrix
+## update_beta <- function(Qmat_inv, Rmat, kprec) {
+##   if (is.null(Qmat_inv) || is.null(Rmat)) {
+##     NULL
+##   } else {
+##     mu_beta <- as.vector(Matrix::tcrossprod(Qmat_inv, Rmat))
+##     Sig_beta <- as.matrix(Qmat_inv / kprec$eps)
+##     t(mvtnorm::rmvnorm(1, mu_beta, Sig_beta))
+##   }
+## }
+
+## ## Nmat_inv: matrix
+## ## Pmat: row matrix
+## ## kprec: list(eps: numeric)
+## ## return: a list of length n_pop
+## update_theta <- function(Nmat_inv, Pmat, kprec) {
+##   mu_theta <- as.vector(Matrix::tcrossprod(Nmat_inv, Pmat))
+##   Sig_theta <- as.matrix(Nmat_inv / kprec$eps)
+##   t(mvtnorm::rmvnorm(1, mu_theta, Sig_theta))
+## }
+
+## ## Bmat_pop: matrix
+## ## theta: col matrix
+## ## return: col matrix
+## calc_f <- function(Bmat_pop, theta) {
+##   Bmat_pop %*% theta
+## }
+
+## ## y: col matrix
+## ## f: col matrix
+## ## Xb: col matrix
+## ## Bmat_sub: list of matrix
+## ## grp_sub: factor
+## ## return: list of row matrix
+## calc_Mmat <- function(y, f, Xb, Bmat_sub, grp_sub) {
+##   if (is.null(Xb)) {
+##     resids <- split(y - f, grp_sub)
+##   } else {
+##     resids <- split(y - f - Xb, grp_sub)
+##   }
+##   stopifnot(names(resids) == names(Bmat_sub))
+##   purrr::map2(resids, Bmat_sub, Matrix::crossprod)
+## }
+
+## ## Lmat_inv: list of matrix
+## ## Mmat: list of matrix
+## ## kprec: list(eps: numeric)
+## ## return: list of col matrix
+## update_delta <- function(Lmat_inv, Mmat, kprec) {
+##   update_delta_i <- function(Lmat_inv_i, Mmat_i) {
+##     mu_delta <- as.vector(Matrix::tcrossprod(Lmat_inv_i, Mmat_i))
+##     Sig_delta <- as.matrix(Lmat_inv_i / kprec$eps)
+##     t(mvtnorm::rmvnorm(1, mu_delta, Sig_delta))
+##   }
+##   purrr::map2(Lmat_inv, Mmat, update_delta_i)
+## }
+
+## ## Bmat_sub: list of matrix
+## ## delta: list of col matrix
+## ## return: col matrix
+## calc_g <- function(Bmat_sub, delta) {
+##   g_ls <- purrr::map2(Bmat_sub, delta, ~as.vector(.x %*% .y))
+##   as.matrix(unlist(g_ls, use.names = FALSE))
+## }
+
+update_yhat_v4 <- function(f, g, Xb) {
+  stopifnot(length(f) == length(g))
+  if (is.null(Xb)) {
+    f + g
+  } else {
+    stopifnot(length(f) == length(Xb))
+    f + g + Xb
+  }
+}
+
+
+## datals: list(Bmat_pop: matrix, Bmat_sub: list of matrix, Xmat: matrix, y: col matrix)
+## y: col matrix
+## Bmat: list of matrix. term for subject curves must be at the front.
+## Bmat attr: spl_dim (num), level (char), index (list of num), penalty (matrix, non-sub spline only),
+## block_dim (num, sub spline only)
+## Xmat: list of matrix
+## xBs: list of matrix (crossprod(Bmat$sub) for each i)
+## kprec: list(spl: list of matrix, eff: list of matrix, eps: numeric)
+update_coefs_v4 <- function(y, Bmat, Xmat, xBs, kprec, debug = FALSE) {
+
+  ## term for subject curves must be at the front.
+  stopifnot(attr(Bmat[[1]], 'is_sub'))
+  
+  allmat <- c(Bmat, Xmat)
+  allprec <- c(kprec$spl, kprec$eff)
+  stopifnot(names(allmat) == names(allprec))
+
+  ## add 's' and 'e' at the front to prevent name crash
+  allnames <- c(paste0('s', names(Bmat)), paste0('e', names(Xmat)))
+  stopifnot(length(allnames) == length(unique(allnames)))
+  names(allmat) <- allnames
+  names(allprec) <- allnames
+
+  Qmat_inv <- purrr::map(allmat, ~NULL)
+  PhixX <- purrr::map(allmat, ~NULL)
+  Rmat <- purrr::map(allmat, ~NULL)
+  coefs <- purrr::map(allmat, ~NULL)
+
+  ## base case (i.e. subject curves):
+  ## PhixX0 (PhixX[[1]]) <- Bmat[[1]]
+  ## Qmat0 (Qmat[[1]]) <- map(xBs, ~.x + prec)
+  ## Phi1 <- map(Bmat[[1]], Qmat_inv[[1]], ~I - tquadprod(.x, .y))
+
+  PhixX[[1]] <- Bmat[[1]]
+  Qmat_inv[[1]] <- purrr::map(xBs, ~pdinv(.x + allprec[[1]] / kprec$eps))
+  Phi <- NULL
+
+  ## calculate Qmat_inv
+  for (l in seq_along(allnames)[-1]) {     
+    ct <- allnames[l] # ct: current term
+    pt <- allnames[l-1] # pt: previous term
+    Phi <- calc_Phi_v4(Phi, PhixX[[pt]], Qmat_inv[[pt]])
+    PhixX[[ct]] <- calc_PhixX_v4(Phi, allmat[[ct]])
+    Qmat_inv[[ct]] <- calc_Qmat_inv_v4(allmat[[ct]], PhixX[[ct]], allprec[[ct]], kprec$eps)
+  }
+  
+  presid <- y
+  Xb <- NULL
+  index <- NULL
+  ## calculate Rmat
+  for (ct in rev(allnames)) {
+    if (ct == allnames[1]) {
+      stopifnot(attr(allmat[[ct]], 'is_sub'))
+      index <- attr(allmat[[ct]], 'index')
+    }
+    presid <- calc_presid_v4(presid, Xb)
+    Rmat[[ct]] <- calc_Rmat_v4(presid, PhixX[[ct]], index)
+    coefs[[ct]] <- gen_coefs(Qmat_inv[[ct]], Rmat[[ct]], kprec$eps)
+    Xb <- calc_Xb_v4(allmat[[ct]], coefs[[ct]])
+  }
+  
+  res <- list(spl = coefs[grepl('^s', names(coefs))],
+              eff = coefs[grepl('^e', names(coefs))])
+
+  res <- purrr::map(res, ~setNames(.x, sub('^(s|e)', '', names(.x))))
+  ## here, Xb is the linear prediction from the subject-specifc splines
+  res$yhat <- y - presid + unlist(Xb, use.names = FALSE)
+
+  ## convert spl coefs to matrices
+  for (l in names(res$spl)) {
+    if (attr(Bmat[[l]], 'is_sub')) {
+      # when splines are subject curves
+      res$spl[[l]] <- structure(do.call(cbind, res$spl[[l]]),
+                                is_sub = TRUE,
+                                block_dim = attr(Bmat[[l]], 'block_dim'))
+    } else {
+      ## return penalty for generic spline
+      res$spl[[l]] <- structure(matrix(res$spl[[l]], nrow = attr(Bmat[[l]], 'spl_dim')),
+                                is_sub = FALSE,
+                                penalty = attr(Bmat[[l]], 'penalty'))
+    }
+  }
+  res
+}
+
+get_coef_container_v4 <- function(para, size) {
+  
+  spl_array <- purrr::map2(para$spl_dims, para$spl_level, 
+                           ~array(NA, c(.x, length(.y), size),
+                                  dimnames = list(NULL, .y, NULL)))
+
+  eff_matrix <- purrr::map2(para$eff_dims, para$eff_level,
+                            ~matrix(NA, .x, size, dimnames = list(.y, NULL)))
+  
+  list(spline = spl_array, effect = eff_matrix)
+}
+
+get_prec_container_v4 <- function(para, size) {
+  spl_array <- purrr::map(para$spl_dims, ~array(NA, c(.x, .x, size)))
+  eff_array <- purrr::map(para$eff_dims, ~array(NA, c(.x, .x, size)))
+  eps_vector <- rep(NA, size)
+
+  list(spline = spl_array, effect = eff_array, eps = eps_vector)
+}
+
+
+## get_dims <- function(Bmat, Xmat) {
+##   list(theta = NCOL(Bmat$pop),
+##        delta = NCOL(Bmat$sub),
+##        beta = NCOL(Xmat))
+## }
+
+get_para_v4 <- function(Bmat, Xmat) {
+  para <- list(spl_dims = purrr::map(Bmat, ~attr(.x, 'spl_dim')),
+               eff_dims = purrr::map(Xmat, NCOL),
+               spl_level = purrr::map(Bmat, ~attr(.x, 'level')),
+               eff_level = purrr::map(Xmat, colnames))
+  
+  ## if (is.null(Xmat)) {
+  ##   ## for ranef to be NULL if no random/fixed effects
+  ##   para[c('dim_beta', 'ranef', 'beta_names')] <- NULL
+  ## } else {
+  ##   if (!is.null(prec_beta)) {
+  ##     message("ranef overriden by prec$beta") 
+  ##     para$ranef <- which(diag(prec_beta) > 0)
+  ##   }
+  ##   if (is.null(colnames(Xmat))) {
+  ##     para$beta_names <- paste0('beta', seq_len(NCOL(Xmat)))
+  ##   } else {
+  ##     para$beta_names <- colnames(Xmat)
+  ##   }
+  ## }
+  para
+}
+
+## x: a vector or matrix, to be squared and sum
+update_with_gamma <- function(x, a, b) {
+  stopifnot(!is.null(x), !is.null(a), !is.null(b))
+  shape <- 0.5 * length(x) + a
+  rate <- 0.5 * sum(x^2) + b
+  stats::rgamma(1, shape = shape, rate = rate)
+}
+
+## x: a matrix of col vectors x, to be tcrossprod
+update_with_wishart <- function(x, v, lambda) {
+  stopifnot(!is.null(x), !is.null(v), !is.null(lambda),
+            NCOL(lambda) == NROW(x))
+  df <- v + NCOL(x)
+  scale <- lambda + Matrix::tcrossprod(x)
+  inv_scale <- as.matrix(pdinv(scale))
+  stats::rWishart(1, df = df, Sigma = inv_scale)[, , 1]
+}
+
+## coefs: matrix, each column the coef of (a subject|a level in a factor)
+## attr(coefs, 'penalty'): a full-row rank penalty matrix (for ordinary
+## splines). Kmat %*% coefs are penalised (i.e. are random)
+## attr(coefs, 'block_dim'): the dimension corresponding to the block cov matrix (for subject splines)
+## return precision matrix for the coefs
+update_prec_spline <- function(coefs, prior) {
+  if (is.null(prior)) {
+    NULL
+  } else {
+    if (attr(coefs, 'is_sub')) {
+      block_dim <- attr(coefs, 'block_dim')
+      ## when coefs are for subject splines
+      if (block_dim > NROW(coefs) || block_dim < 0) {
+        stop('block_dim out of bound.')
+      }
+      block <- NA
+      iid <- NA
+      ## block precision term
+      if (block_dim > 0) {
+        coefs_block <- coefs[seq(1, block_dim), , drop = FALSE]
+        block <- update_with_wishart(coefs_block, prior$v, prior$lambda)
+      }
+      ## iid precision term
+      if (block_dim < NROW(coefs)) {
+        coefs_iid <- coefs[seq(block_dim + 1, NROW(coefs)), , drop = FALSE]
+        iid <- update_with_gamma(coefs_iid, prior$a, prior$b)
+      }
+      
+      diag(iid, NROW(coefs)) %>%
+        `[<-`(seq_len(block_dim), seq_len(block_dim), block)
+    } else {
+      ## when coefs are for ordinary splines
+      Kmat <- attr(coefs, 'penalty')
+      stopifnot(!is.null(Kmat))
+      x <- Kmat %*% coefs
+      update_with_gamma(x, prior$a, prior$b) * Matrix::crossprod(Kmat)
+    }
+  }
+}
+## yhat, y: list of col vectors/vectors with the same names
+## return precision of the residual
+update_prec_eps <- function(yhat, y, prior) {
+  stopifnot(names(y) == names(yhat))
+  resids <- y - yhat
+  ## resids <- unlist(y) - unlist(yhat)
+  update_with_gamma(resids, prior$a, prior$b)
+}
+
+## coefs: col vector/vector
+## prior: list of prior hyperparameter
+## if prior is NULL, return a zero matrix. (i.e. coefs are fixed effects)
+update_prec_effect <- function(coefs, prior) {
+  stopifnot(NCOL(coefs) == 1)
+  if (is.null(prior)) {
+    matrix(0, NROW(coefs), NROW(coefs))
+  } else {
+    prec <- update_with_gamma(coefs, prior$a, prior$b)
+    diag(prec, NROW(coefs))
+    ## rep(0, times = NROW(coefs)) %>%
+    ##   `[<-`(ranef, prec) %>%
+    ##   diag()
+  }
+}
+
+update_precs_v4 <- function(kcoef, y, prior_ls, init_prec = NULL) {
+  if (is.null(init_prec)) {
+    stopifnot(names(kcoef$spl) == names(prior_ls$spl),
+              names(kcoef$eff) == names(prior_ls$eff))
+
+    list(spl = purrr::map2(kcoef$spl, prior_ls$spl, update_prec_spline),
+         eff = purrr::map2(kcoef$eff, prior_ls$eff, update_prec_effect),
+         eps = update_prec_eps(kcoef$yhat, y, prior_ls$eps))
+  } else {
+    init_prec
+  }
+}
+
+
+## ## Bmat: list(pop: matrix, sub: matrix)
+## ## Xmat: matrix
+## ## y: col matrix
+## ## para: list(grp_sub: factor)
+## ## split data into chucks according to the subject index arguments are same as
+## ## bayes_ridge_semi().
+## split_data_subjects <- function(Bmat, Xmat, y, para, debug) {
+
+##   stopifnot(is.factor(para$grp_sub)) # must be a factor, or risk mixing up row index
+
+##   Bmat_sub <- split.data.frame(Bmat$sub, para$grp_sub)
+
+##   datals <- list(Bmat_pop = Matrix::Matrix(Bmat$pop, sparse = TRUE),
+##                  Bmat_sub = purrr::map(Bmat_sub, Matrix::Matrix),
+##                  y = Matrix::Matrix(y))
+
+##   if (!is.null(Xmat)) {
+##     datals$Xmat <- Matrix::Matrix(Xmat, sparse = TRUE)
+##   }
+
+  
+##   if (debug) {
+##     ## stopifnot(names(datals$Bmat_pop) == names(datals$Bmat_sub),
+##     ##           names(datals$Bmat_pop) == names(datals$Xmat),
+##     ##           names(datals$Bmat_pop) == names(datals$y))
+##   }
+##   datals
+## }
+
+## calculate posterior mean from an array or vector of samples recursively down
+## a list. The samples are populated along the last dimension, e.g. the
+## columns of a matrix are the samples; the depth of a 3D array are the samples.
+pmean_v4 <- function(samples) {
+  if (is.array(samples)) {
+    rowMeans(samples, dims = length(dim(samples)) - 1)
+  } else if (is.vector(samples, mode = 'numeric')) {
+    mean(samples)
+  } else if (is.list(samples)) {
+    purrr::map(samples, pmean_v4)
+  } else {
+    stop("Invalid samples structure.")
+  }
+}
+
+## This is a Gibbs sampler v3 for longitudinal Bayesian semiparametric ridge.
+## Update two block of parameters: variance and coefs
+
+## Requirements: y, grp, Bmat (df), Xmat (df), Kmat, block_dim, ranef
+
+## Algorithms paremeters: burn, size
+## Extras: init (list of matrices with 'pop' and 'sub'), prior (see 'check_prior')
+
+
+#' Bayesian ridge for longitudinal semiparemetric models
+#'
+#' This is a Gibbs sampler v3 for fitting Bayesian longitudinal semiparametric
+#' models. It assumes that there are multiple populations in the model and each
+#' population is modelled by a 'population' curve. Within each population, they
+#' are multiple subjects, and each subject are modelled by a 'subject'
+#' curve. The subject curves are treated as deviations from their respective
+#' population curves. On top of that, fixed or random effects can be added to
+#' the model. This is useful when, for example, a particular treatment was
+#' applied to some of the populations or subjects, and the user is interested in
+#' the effect of the treatment.
+#'
+#' The population and subject curves are modelled as linear (in statistical
+#' sence, not only stright lines). This includes polynomials and splines.
+#'
+#' 'index' is a list of numeric vector specifying the position of rows for each
+#'   level of the factor. The precision of the prior of the regression
+#'   coefficient is up to a multiplicative constant of crossprod('penalty').
+#'
+#'  The mathematical model is
+#'
+#' y_i = Bmat$pop_i %*% \theta_i + Bmat$sub_i %*% \delta_i + Xmat_i %*% \beta +
+#' \epsilon_i
+#'
+#' where 'i' is the index of subjects, y_i is a vector of observation for the
+#' i^{th} subjectm, Bmat$pop_i and Bmat$sub_i are the model/design matrices for
+#' the population and subject curves (of the i^{th} subject) respectively, and
+#' \epsilon_i are Gaussian errors. The \theta_i should be intepreted as the
+#' regression coefficients of the population curve of the i^{th} subject, and
+#' the subjects belonging to the same population will have the same \theta. This
+#' implies that some of the \theta_i will be identical. However, \delta_i will
+#' be different for each subject, while \beta will be the same for all subjects.
+#'
+#' The coefficients \theta, \delta, \beta and \epsilon are all Gaussian, but
+#' their covariance structures are not necessarily diagonal. Consult the
+#' manual/paper for more info.
+#'
+#' The sampler first updates the precision, then the coefficients. The joint
+#' conditional posterior of all the coefficients is often highly correlated, but
+#' fortunately a closed-form expression is available and is utilised here. This
+#' implies that the convergence of this Gibbs sampler is quick and does not
+#' require burning many samples in the beginning.
+#' 
+#' @param y A vector of the response vector.
+#' @param Bmat A named list of design matrices for the splines terms with the
+#'   following attributes: 'spl_dim', 'is_sub', 'level'. For subject-specific
+#'   splines (i.e. is_sub = TRUE), it should also have 'block_dim' and
+#'   'index'. For other splines, it should have 'penalty'. At least an element
+#'   of Bmat must be 'is_sub = TRUE'. See details.
+#' @param Xmat A list of design matrices for the non-spline terms, e.g. fixed
+#'   and random effects.
+#' @param prior unknown yet
+#' @param prec An optional list of precisions with 'theta', 'delta', 'beta' and
+#'   'eps'. If supplied, the precisions of the model are fixed. All the elements
+#'   are square matrices, except 'eps' which is a number. The 'beta' term here
+#'   will override `ranef` (i.e. all the 0 in diagonal will result in the
+#'   corresponding beta being fixed).
+#' @param init An initial values of the regression coefficients for the
+#'   sampler...
+#' @param burn The number of samples to be burned before actual sampling.
+#' @param size The number of samples to be obtained from the samples.
+#' 
+#' @return A list of length two, posterior samples and means are stored in
+#'   'samples' and 'means' elements respectively. Within each elements, 'coef'
+#'   are the regression coefficients and 'prec' the precisions (i.e. the inverse
+#'   of variances).
+#' 
+#'  The coef samples are organised as a list of arrays for splines and a list of
+#'  matrices for effects. (rewrite the precision part, except coef$beta (matrix)
+#'  and prec$eps (vector)). The samples are always populated along the last
+#'  dimension of the array, matrix or vector. For the 'coef' samples, the first
+#'  dimension of the array/matrix is always the dimension of the coefficients,
+#'  followed by the indices of populations/subjects (for 'theta' and 'delta'
+#'  only). All the precisions except 'eps' are symmetrical square matrices.
+#'
+bayes_ridge_semi_v4 <- function(y, Bmat, Xmat,
+                                prior = NULL, prec = NULL, init = NULL,
+                                burn = 0, size = 1000, debug = TRUE) {
+
+  ## assumptions on y, Bmat, Xmat and grp
+  ## grp$sub are 'sticked' together, i.e. rows belonging to the same subjects are sticked together.
+
+  which_sub <- purrr::map_lgl(Bmat, ~attr(.x, 'is_sub'))
+  if (sum(which_sub) != 1) {
+    stop('must include one and only one term for subject-specific curves.')
+  }
+
+  ## put subject curves at the front
+  Bmat <- Bmat[order(which_sub, decreasing = TRUE)]
+  ## check if each element has a name
+  stopifnot(length(setdiff(names(Bmat), '')) == length(Bmat))
+
+  if (is.null(prec)) {
+    prec_ls <- NULL
+    stopifnot(!is.null(prior))
+    prior_ls <- list(spl = prior$spl[order(which_sub, decreasing = TRUE)],
+                     eff = prior$eff,
+                     eps = prior$eps)
+    prior <- prec <- NULL
+  } else {
+    message('Emperical Bayes. Prior ignored.')
+    prior_ls <- NULL
+    prec_ls <- list(spl = prec$spl[order(which_sub, decreasing = TRUE)],
+                    eff = prec$eff,
+                    eps = prec$eps)
+    prior <- prec <- NULL
+  }
+
+  ## check_Kmat(Kmat)
+  para <- get_para_v4(Bmat, Xmat)
+  ## check_prec(prec, para)
+  
+  ## para: n_subs, subs_in_pop, pop_of_subs
+  coef_samples <- get_coef_container_v4(para, size)
+  prec_samples <- get_prec_container_v4(para, size)
+  kcoef <- initialise_v4(Bmat, Xmat, y)
+
+  ## some pre-calculation
+  xBs <- calc_xBs_v4(Bmat[[1]])
+
+  ## make sure the names of precision/prior are in the same order as kcoef
+  stopifnot(names(prior_ls$spl) == names(kcoef$spl),
+            names(prior_ls$eff) == names(kcoef$eff))    
+  stopifnot(names(prec_ls$spl) == names(kcoef$spl),
+            names(prec_ls$eff) == names(kcoef$eff))  
+  
+  for (k in seq.int(-burn + 1, size)) {
+    kprec <- update_precs_v4(kcoef, y, prior_ls, prec_ls)
+    kcoef <- update_coefs_v4(y, Bmat, Xmat, xBs, kprec, debug)
+    
+    ## print progress
+    if (k %% floor(size / 5) == 0) {
+      message(k, " samples generated.")
+    }
+
+    if (k > 0) {
+      for (l in names(coef_samples$spl)) {
+        stopifnot(attr(Bmat[[l]], 'level') == dimnames(coef_samples$spline[[l]])[[2]] ||
+                    is.na(attr(Bmat[[l]], 'level')) &&
+                    is.na(dimnames(coef_samples$spline[[l]])[[2]]))
+        coef_samples$spline[[l]][, , k] <- kcoef$spl[[l]]
+        prec_samples$spline[[l]][, , k] <- kprec$spl[[l]]
+      }
+      for (l in names(coef_samples$eff)) {
+        coef_samples$effect[[l]][, k] <- kcoef$eff[[l]]
+        prec_samples$effect[[l]][, , k] <- kprec$eff[[l]]
+      }
+      prec_samples$eps[k] <- kprec$eps
+    }
+  }
+  
+  list(samples = list(coef = coef_samples,
+                      prec = prec_samples),
+       means = list(coef = pmean_v4(coef_samples),
+                    prec = pmean_v4(prec_samples)))
+}

@@ -161,7 +161,7 @@ get_diff_mat <- function(size, k) {
 get_transform_bs <- function(size, k) {
   Dmat <- get_diff_mat(size, k)
   Tmat <- cbind(-1/sqrt(size),
-                poly(seq_len(size), degree = k - 1, simple = TRUE),
+                stats::poly(seq_len(size), degree = k - 1, simple = TRUE),
                 crossprod(Dmat, chol2inv(chol(tcrossprod(Dmat)))))
   unname(Tmat)
 }
@@ -221,7 +221,7 @@ get_design_tpf <- function(x, K, deg) {
 
     ## get the inner knots
     if (length(K) == 1 && is.numeric(K)) {
-        res$knots <- unname(quantile(unique(x), seq(0, 1, len = K + 2)))
+        res$knots <- unname(stats::quantile(unique(x), seq(0, 1, len = K + 2)))
         ## res$knots <- unname(seq(min(x), max(x), length.out = K + 2))
         knots <- res$knots[-c(1, K + 2)]
     } else if (is.vector(K) && is.numeric(K)) {
@@ -238,7 +238,7 @@ get_design_tpf <- function(x, K, deg) {
     ## this chunck can be generalised to higher degree polynomials
     if (deg > 0 && deg < 4) {
         splines <- splines^deg * (splines > 0)
-        res$design <- cbind(1, poly(x, degree = deg, raw = TRUE, simple = TRUE),
+        res$design <- cbind(1, stats::poly(x, degree = deg, raw = TRUE, simple = TRUE),
                             splines, deparse.level = 0)
         colnames(res$design) <- NULL
     } else {
