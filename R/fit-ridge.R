@@ -470,7 +470,7 @@ parse_effect <- function(fo, data, envir = attr(fo, '.Environment')) {
 ## efficient prediction calculation of factor variables
 ## model_mat: the model matrix to be multiplied
 ## by: a vector specifying the group which each row of model matrix corresponds to
-## coef: a matrix of spline coef. colnames must have unique(grp)
+## coef: a matrix of spline coef. colnames must have unique(by)
 predict_grp <- function(model_mat, by, coef) {
   
   if (is.null(by)) {
@@ -488,18 +488,43 @@ predict_grp <- function(model_mat, by, coef) {
   }
 }
 
+## efficient prediction calculation of factor variables in bulk
+## model_mat: the model matrix to be multiplied
+## by: a vector specifying the group which each row of model matrix corresponds to
+## coef: a 2D or 3D array of spline coef. The last dim are samples of coefs. If 3D, colnames must have unique(by). 
+predict_grp2 <- function(model_mat, by, coefs) {
+  
+  if (is.null(by)) {
+    stopifnot(length(dim(coefs)) == 2)
+    model_mat %*% coefs
+  } else {
+    stopifnot(unique(by) %in% colnames(coef),
+              length(by) == NROW(model_mat))
+    res <- matrix(NA, nrow = length(by), ncol = dim(coefs)[3])
+    for (l in unique(by)) {
+      idx <- by == l
+      res[idx, ] <- model_mat[idx, ] %*% coef[, as.character(l), ]
+    }
+    res
+  }
+}
 
-#' Predict with posterior mean
+
+
+#' Predict with posterior mean (or with other statistics)
 #'
-#' Return prediction with the posterior mean of the regression coefficients.
+#' Return prediction with the posterior mean (or other statistics) of the
+#' regression coefficients.
 #' 
 #' @param object an 'fsso' object.
 #' @param newdata a data frame with all the covariate required for prediction.
 #' @param level a string specify the name of the spline. Only the component
 #'   correponding to that spline is returned together with the effect terms).
+#' @param fun a function applying to the samples of each marginal posterior of
+#'   the regression coefs. By default, it's `mean`.
 #' 
 #' @export
-predict.fsso <- function(object, newdata = NULL, level = NULL) {
+predict.fsso <- function(object, newdata = NULL, level = NULL, fun = NULL) {
   ## temporary measure. change the output samples in the future
   ## names(object$means$coef) <- c('pop', 'sub', 'fixed')
     
@@ -523,9 +548,17 @@ predict.fsso <- function(object, newdata = NULL, level = NULL) {
   }
   stopifnot(level %in% names(object$spline))
 
+  ## predict with means if fun is NULL, or otherwise
+  if (is.null(fun)) {
+    coefs_ls <- object$means$coef
+  } else {
+    coefs_ls <- pstats_v4(object$samples$coef, fun = fun)
+  }
+
   res1 <- purrr::map2(object$spline[level],
-                      object$means$coef$spline[level],
+                      coefs_ls$spline[level],
                       predict_spl_i)
+
 
   predict_eff_i <- function(eff, coefs) {
     if (is.null(eff)) {
@@ -543,7 +576,7 @@ predict.fsso <- function(object, newdata = NULL, level = NULL) {
 
   stopifnot(names(object$effect) == names(object$means$coef$effect))
   res2 <- purrr::map2(object$effect,
-                      object$means$coef$effect[names(object$effect)],
+                      coefs_ls$effect[names(object$effect)],
                       predict_eff_i)
 
   ## c(res1, res2)

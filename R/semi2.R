@@ -768,6 +768,20 @@ pmean_v4 <- function(samples) {
   }
 }
 
+
+pstats_v4 <- function(samples, fun) {
+  fun <- purrr::as_mapper(fun)
+  if (is.array(samples)) {
+    apply(samples, seq(1, length(dim(samples)) - 1), fun)
+  } else if (is.vector(samples, mode = 'numeric')) {
+    fun(samples)
+  } else if (is.list(samples)) {
+    purrr::map(samples, pstats_v4, fun = fun)
+  } else {
+    stop("Invalid samples structure.")
+  }
+}
+
 ## This is a Gibbs sampler v3 for longitudinal Bayesian semiparametric ridge.
 ## Update two block of parameters: variance and coefs
 
