@@ -40,18 +40,18 @@ spl <- list()
 spl$pop <- purrr::map(unique(grp$pop), ~`[<-`(Bmat$pop, grp$pop != .x, , 0)) %>%
   {do.call(cbind, .)}
 
-attr(spl$pop, 'index') <- split(1:NROW(Bmat$pop), grp$pop)
-attr(spl$pop, 'spl_dim') <- NCOL(spl$pop) / length(attr(spl$pop, 'index'))
-attr(spl$pop, 'levels') <- names(attr(spl$pop, 'index'))
-attr(spl$pop, 'penalty') <- diag(4)
+## attr(spl$pop, 'index') <- split(1:NROW(Bmat$pop), grp$pop)
+attr(spl$pop, 'spl_dim') <- NCOL(spl$pop) / length(unique(grp$pop))
 attr(spl$pop, 'is_sub') <- FALSE
+attr(spl$pop, 'level') <- unique(grp$pop)
+attr(spl$pop, 'penalty') <- diag(4)
 
 spl$sub <- split.data.frame(Bmat$sub, grp$sub)
 attr(spl$sub, 'index') <- split(1:NROW(Bmat$sub), grp$sub)
 attr(spl$sub, 'spl_dim') <- NCOL(Bmat$sub)
-attr(spl$sub, 'levels') <- names(attr(spl$sub, 'index'))
-attr(spl$sub, 'block_dim') <- 2
 attr(spl$sub, 'is_sub') <- TRUE
+attr(spl$sub, 'level') <- names(attr(spl$sub, 'index'))
+attr(spl$sub, 'block_dim') <- 2
 
 ## eff1: random, eff2: fixed
 eff <- list(eff1 = `colnames<-`(Xmat[, 1:2], c('a', 'b')),
@@ -75,9 +75,9 @@ prior <- list(spl = list(pop = list(a = -0.5, b = 0),
               eps = list(a = -0.5, b = 0))
 
 load_all()
-fm1 <- bayes_ridge_semi_v4(y, spl, eff, prior = prior, prec = NULL, size = 100)
+fm1 <- bayes_ridge_semi_v4(y, spl, eff, prior = prior, prec = NULL, size = 1000)
 
 fm2 <- bayes_ridge_semi_v4(y, spl, eff, prior = NULL, prec = prec, size = 500)
 
 str(fm1)
-acf(fm1$samples$coef$effect$eff1[1, ])
+plot(fm1$samples$coef$spline$sub[1, 1, ])

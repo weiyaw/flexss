@@ -44,40 +44,40 @@ is_matchls <- function(ls1, ls2) {
 ##               is_precision(prec_beta))
 ##   }
 ## }
-## check_prec <- function(prec, para) {
-##   ## display specified precision
-##   if (!is.null(prec$theta)) {
-##     message('prec$theta specified.')
-##     stopifnot(is.matrix(prec$theta),
-##               dim(prec$theta) == para$dim_theta,
-##               is_precision(prec$theta))
-##   }
+check_prec_v4 <- function(prec, para) {
+  ## display specified precision
+  if (!is.null(prec$theta)) {
+    message('prec$theta specified.')
+    stopifnot(is.matrix(prec$theta),
+              dim(prec$theta) == para$dim_theta,
+              is_precision(prec$theta))
+  }
 
-##   if (!is.null(prec$delta)) {
-##     message('prec$delta specified.')
-##     stopifnot(is.matrix(prec$delta),
-##               dim(prec$delta) == para$dim_delta,
-##               is_precision(prec$delta))
-##   }
+  if (!is.null(prec$delta)) {
+    message('prec$delta specified.')
+    stopifnot(is.matrix(prec$delta),
+              dim(prec$delta) == para$dim_delta,
+              is_precision(prec$delta))
+  }
 
-##   if (!is.null(prec$beta)) {
-##     if (is.null(para$dim_beta)) {
-##       message("prec$beta specified but irrelavent. No fixed/random effects.")
-##     } else {
-##       message('prec$beta specified.')
-##       stopifnot(is.matrix(prec$beta),
-##                 dim(prec$beta) == para$dim_beta,
-##                 is_precision(prec$beta))
-##     }
-##   }
+  if (!is.null(prec$beta)) {
+    if (is.null(para$dim_beta)) {
+      message("prec$beta specified but irrelavent. No fixed/random effects.")
+    } else {
+      message('prec$beta specified.')
+      stopifnot(is.matrix(prec$beta),
+                dim(prec$beta) == para$dim_beta,
+                is_precision(prec$beta))
+    }
+  }
 
-##   if (!is.null(prec$eps)) {
-##     message('prec$eps specified.')
-##     stopifnot(is.numeric(prec$eps),
-##               length(prec$eps) == 1,
-##               prec$eps > 0)
-##   }
-## }
+  if (!is.null(prec$eps)) {
+    message('prec$eps specified.')
+    stopifnot(is.numeric(prec$eps),
+              length(prec$eps) == 1,
+              prec$eps > 0)
+  }
+}
 
 
 
@@ -207,20 +207,79 @@ is_matchls <- function(ls1, ls2) {
 ##   list(theta = theta, delta = delta, beta = beta, yhat = yhat)
 ## }
 
+
+
+
 ## initialise coef with some random Gaussian rv.
 initialise_v4 <- function(Bmat, Xmat, y) {
-  ## HERE, THIS SHIT INITIALISATION NEED TO BE REPLACED BY SOMETHING BETTER
-  res <- list(spl = purrr::map(Bmat, ~structure(matrix(stats::rnorm(attr(.x, 'spl_dim') *
-                                                               length(attr(.x, 'level'))),
-                                                       attr(.x, 'spl_dim'),
-                                                       length(attr(.x, 'level'))),
+
+  ## penalised least squares with lambda = 100, and add some gaussian noise
+  pls <- function(x) {
+    if (is.list(x) && attr(x, 'is_sub')) {
+      beta_pls <- 0
+    } else if (is.matrix(x)) {
+      ##:ess-bp-start::browser@nil:##
+browser(expr=is.null(.ESSBP.[["@3@"]]));##:ess-bp-end:##
+      beta_pls <- solve(crossprod(x) + 100 * crossprod(attr(x, 'penalty'))) %*%
+        crossprod(x, y)
+    } else {
+      stop('Cannot initialise.')
+    }
+    
+    ## add some noise into the pls
+    beta_pls + 
+      matrix(stats::rnorm(attr(x, 'spl_dim') * length(attr(x, 'level'))),
+             nrow = attr(x, 'spl_dim'),
+             ncol = length(attr(x, 'level')))
+    
+  }
+
+  res <- list(spl = purrr::map(Bmat, ~structure(pls(.x),
                                                 is_sub = attr(.x, 'is_sub'),
                                                 penalty = attr(.x, 'penalty'),
                                                 block_dim = attr(Bmat[[1]], 'block_dim'))),
               eff = purrr::map(Xmat, ~structure(stats::rnorm(NCOL(.x)))))
+
+  ## HERE, THIS SHIT INITIALISATION NEED TO BE REPLACED BY SOMETHING BETTER
+  ## res <- list(spl = purrr::map(Bmat, ~structure(matrix(stats::rnorm(attr(.x, 'spl_dim') *
+  ##                                                              length(attr(.x, 'level'))),
+  ##                                                      attr(.x, 'spl_dim'),
+  ##                                                      length(attr(.x, 'level'))),
+  ##                                               is_sub = attr(.x, 'is_sub'),
+  ##                                               penalty = attr(.x, 'penalty'),
+  ##                                               block_dim = attr(Bmat[[1]], 'block_dim'))),
+  ##             eff = purrr::map(Xmat, ~structure(stats::rnorm(NCOL(.x)))))
   res$yhat <- y + stats::rnorm(y)
   res
 }
+
+initialise_prec_v4 <- function(Bmat, Xmat, y) {
+  spl_prec <- function(x) {
+    if (attr(x, 'is_sub') & is.null(attr(x, 'penalty'))) {
+      diag(attr(x, 'spl_dim'))
+    } else if (!attr(x, 'is_sub') & !is.null(attr(x, 'penalty'))) {
+      stopifnot(NCOL(attr(x, 'penalty')) == attr(x, 'spl_dim'))
+      crossprod(attr(x, 'penalty')) * 100
+    } else {
+      stop('Cannot initialise.')
+    }
+  }
+  
+  eff_prec <- function(x) {
+    diag(NCOL(x))
+  }
+
+  list(spl = purrr::map(Bmat, spl_prec),
+       eff = purrr::map(Xmat, eff_prec),
+       eps = 1 / sd(y))
+
+
+  ## list(spl = purrr::map2(kcoef$spl, prior_ls$spl, update_prec_spline),
+  ##      eff = purrr::map2(kcoef$eff, prior_ls$eff, update_prec_effect),
+  ##      eps = update_prec_eps(kcoef$yhat, y, prior_ls$eps))
+
+}
+
 
 ## Bmat: list of matrix
 ## return: list of matrix
@@ -314,8 +373,8 @@ calc_Qmat_inv_v4 <- function(Xmat, PhixX, Sigma_inv, eps_inv) {
     } else {
       ## if it's a spline Xmat (i.e. Bmat)
       for (i in seq_along(attr(Xmat, 'level'))) {
-        index <- seq.int(to = spl_dim * i, length.out = spl_dim)
-        XtX[index, index] <- XtX[index, index] + Sigma_inv / eps_inv
+        idx <- seq.int(to = spl_dim * i, length.out = spl_dim)
+        XtX[idx, idx] <- XtX[idx, idx] + Sigma_inv / eps_inv
       }
       pdinv(XtX)
       ## }
@@ -782,6 +841,64 @@ pstats_v4 <- function(samples, fun) {
   }
 }
 
+check_Bmat <- function(Bmat) {
+
+  check_each_Bmat <- function(x, x_name) {
+    if (is.null(attr(x, 'spl_dim'))) {
+      stop('spl_dim not specified in ', x_name, '.')
+    }
+    if (is.null(attr(x, 'level'))) {
+      stop('level not specified in ', x_name, '.')
+    } 
+
+    if (attr(x, 'is_sub')) {
+      if (!(is.list(x) && all(purrr::map_lgl(x, is.matrix)))) {
+        stop(x_name, ' must be a list of matrices.')
+      }
+      if (is.null(attr(x, 'index'))) {
+        stop('no index in the subject term.')
+      }
+      if (!is.list(attr(x, 'index'))) {
+        stop('index in the subject term must be a list.')
+      }
+      if (!all(names(attr(x, 'index')) %in% attr(x, 'level'))) {
+        stop('names of the index in the subject term must exist in level.')
+      }
+      if (is.null(attr(x, 'block_dim'))) {
+        stop('no block_dim in the subject term.')
+      }
+    } else {
+      if (!is.matrix(x)) {
+        stop(x_name, ' must be a matrix.')
+      }
+      if (NCOL(x) != (attr(x, 'spl_dim') * length(attr(x, 'level')))) {
+        stop('number of cols of ', x_name, ' mismatch with spl_dim and level.')
+      } 
+
+      if (is.null(attr(x, 'penalty'))) {
+        stop('penalty not specified in ', x_name, '.')
+      }
+    }
+  }
+
+  if (any(purrr::map_lgl(names(Bmat), is.null))) {
+    stop('all entries of Bmat must have a name.')
+  }
+  if (sum(purrr::map_lgl(Bmat, ~attr(.x, 'is_sub'))) != 1) {
+    stop('must include one and only one term for subject-specific curves.')
+  }
+
+  purrr::iwalk(Bmat, check_each_Bmat)
+}
+
+check_Xmat <- function(Xmat) {
+
+  if (any(purrr::map_lgl(names(Xmat), is.null))) {
+    stop('all entries of Xmat must have a name.')
+  }
+}
+
+
 ## This is a Gibbs sampler v3 for longitudinal Bayesian semiparametric ridge.
 ## Update two block of parameters: variance and coefs
 
@@ -795,59 +912,75 @@ pstats_v4 <- function(samples, fun) {
 #'
 #' This is a Gibbs sampler v3 for fitting Bayesian longitudinal semiparametric
 #' models. It assumes that there are multiple populations in the model and each
-#' population is modelled by a 'population' curve. Within each population, they
-#' are multiple subjects, and each subject are modelled by a 'subject'
+#' population is modelled by a population 'mean' curve. Within each population,
+#' they are multiple subjects, and each subject are modelled by a 'subject'
 #' curve. The subject curves are treated as deviations from their respective
-#' population curves. On top of that, fixed or random effects can be added to
-#' the model. This is useful when, for example, a particular treatment was
-#' applied to some of the populations or subjects, and the user is interested in
-#' the effect of the treatment.
+#' mean curves. On top of that, fixed or random effects can be added to the
+#' model. This is useful when, for example, a particular treatment was applied
+#' to some of the populations or subjects, and the user is interested in the
+#' effect of the treatment.
 #'
-#' The population and subject curves are modelled as linear (in statistical
-#' sence, not only stright lines). This includes polynomials and splines.
+#' The mean and subject curves are modelled as linear (in statistical sence, not
+#' only stright lines). This includes polynomials and splines. The attributes of
+#' their design matrices (i.e. Bmat) are
+#'
+#' 'spl_dim' is the dimension of the splines.
+#' 
+#' 'is_sub' is a boolean that specifies whether the spline term is a
+#' subject-specific deviations.
+#'
+#' 'level' is the name of each population or subject. NA if there is only one
+#' population.
 #'
 #' 'index' is a list of numeric vector specifying the position of rows for each
-#'   level of the factor. The precision of the prior of the regression
-#'   coefficient is up to a multiplicative constant of crossprod('penalty').
+#'   subject. Only applicable for subject curves.
 #'
-#'  The mathematical model is
+#' 'block_dim' is the dimension of the subject deviations where the precision
+#' should be considered as a block. See paper for more details.
+#' 
+#' 'penalty' relates to the precision of the prior of the mean curve
+#'   coefficient, which is a multiple of crossprod('penalty'), i.e. ('penalty'
+#'   %*% \theta_i) is shrunk to 0.
 #'
-#' y_i = Bmat$pop_i %*% \theta_i + Bmat$sub_i %*% \delta_i + Xmat_i %*% \beta +
-#' \epsilon_i
+#' The semiparametric model is
 #'
-#' where 'i' is the index of subjects, y_i is a vector of observation for the
-#' i^{th} subjectm, Bmat$pop_i and Bmat$sub_i are the model/design matrices for
-#' the population and subject curves (of the i^{th} subject) respectively, and
-#' \epsilon_i are Gaussian errors. The \theta_i should be intepreted as the
-#' regression coefficients of the population curve of the i^{th} subject, and
-#' the subjects belonging to the same population will have the same \theta. This
-#' implies that some of the \theta_i will be identical. However, \delta_i will
-#' be different for each subject, while \beta will be the same for all subjects.
+#' y = Bmat[[1]] %*% \theta_1 + ... + Xmat[[1]] %*% \beta_1 + ... + Bmat[[sub]]
+#' %*% \delta + \epsilon
+#'
+#' y is a vector of observation, Bmat[[...]] %*% \theta are the splines that
+#' constitute the mean curve, Xmat[[...]] %*% \beta are the fixed/random
+#' effects, Bmat[[sub]] %*% \deltais the subject-specific deviations, and
+#' \epsilon are Gaussian errors.
 #'
 #' The coefficients \theta, \delta, \beta and \epsilon are all Gaussian, but
 #' their covariance structures are not necessarily diagonal. Consult the
 #' manual/paper for more info.
 #'
-#' The sampler first updates the precision, then the coefficients. The joint
+#' The sampler first updates the coefficients, then the precisions. The joint
 #' conditional posterior of all the coefficients is often highly correlated, but
 #' fortunately a closed-form expression is available and is utilised here. This
 #' implies that the convergence of this Gibbs sampler is quick and does not
-#' require burning many samples in the beginning.
+#' require burning many samples in the beginning. The starting values of the
+#' sampler are precisions with a reasonably large value (hence a large penalty).
 #' 
 #' @param y A vector of the response vector.
-#' @param Bmat A named list of design matrices for the splines terms with the
-#'   following attributes: 'spl_dim', 'is_sub', 'level'. For subject-specific
-#'   splines (i.e. is_sub = TRUE), it should also have 'block_dim' and
-#'   'index'. For other splines, it should have 'penalty'. At least an element
-#'   of Bmat must be 'is_sub = TRUE'. See details.
-#' @param Xmat A list of design matrices for the non-spline terms, e.g. fixed
-#'   and random effects.
+#' @param Bmat A named list of design matrices for the splines terms (or a list
+#'   of design matrices of each subject for the subject spline) with at least
+#'   the following attributes: 'spl_dim', 'is_sub', 'level'. For
+#'   subject-specific splines (i.e. is_sub = TRUE), it is a list of matrices and
+#'   should also have 'block_dim' and 'index'. For other splines, it is a matrix
+#'   and should have 'penalty'. At least an element of Bmat must be 'is_sub =
+#'   TRUE'. See details.
+#' @param Xmat A named list of design matrices for the non-spline terms,
+#'   e.g. fixed and random effects.
 #' @param prior unknown yet
-#' @param prec An optional list of precisions with 'theta', 'delta', 'beta' and
-#'   'eps'. If supplied, the precisions of the model are fixed. All the elements
-#'   are square matrices, except 'eps' which is a number. The 'beta' term here
-#'   will override `ranef` (i.e. all the 0 in diagonal will result in the
-#'   corresponding beta being fixed).
+#' @param prec An optional named list with three elements 'spl', 'eff' and
+#'   'eps'. If supplied, the precisions of the model are fixed. Each of the
+#'   'spl' and 'eff' terms is a named list of precisions that correspond to
+#'   'Bmat' and 'Xmat' respectively, and the names of the list must match. All
+#'   the elements are square matrices with the dimension matching 'spl_dim' of
+#'   Xmat or Bmat, except 'eps' which is a number. A zero precision will imply
+#'   that the term is fixed.
 #' @param init An initial values of the regression coefficients for the
 #'   sampler...
 #' @param burn The number of samples to be burned before actual sampling.
@@ -873,10 +1006,9 @@ bayes_ridge_semi_v4 <- function(y, Bmat, Xmat,
   ## assumptions on y, Bmat, Xmat and grp
   ## grp$sub are 'sticked' together, i.e. rows belonging to the same subjects are sticked together.
 
+  check_Bmat(Bmat)
+  check_Xmat(Xmat)
   which_sub <- purrr::map_lgl(Bmat, ~attr(.x, 'is_sub'))
-  if (sum(which_sub) != 1) {
-    stop('must include one and only one term for subject-specific curves.')
-  }
 
   ## put subject curves at the front
   Bmat <- Bmat[order(which_sub, decreasing = TRUE)]
@@ -906,20 +1038,27 @@ bayes_ridge_semi_v4 <- function(y, Bmat, Xmat,
   ## para: n_subs, subs_in_pop, pop_of_subs
   coef_samples <- get_coef_container_v4(para, size)
   prec_samples <- get_prec_container_v4(para, size)
-  kcoef <- initialise_v4(Bmat, Xmat, y)
+  ## kcoef <- initialise_v4(Bmat, Xmat, y)
+  kprec <- initialise_prec_v4(Bmat, Xmat, y)
 
   ## some pre-calculation
   xBs <- calc_xBs_v4(Bmat[[1]])
+  
+  ## ## make sure the names of precision/prior are in the same order as kcoef
+  ## stopifnot(names(prior_ls$spl) == names(kcoef$spl),
+  ##           names(prior_ls$eff) == names(kcoef$eff))    
+  ## stopifnot(names(prec_ls$spl) == names(kcoef$spl),
+  ##           names(prec_ls$eff) == names(kcoef$eff))  
 
-  ## make sure the names of precision/prior are in the same order as kcoef
-  stopifnot(names(prior_ls$spl) == names(kcoef$spl),
-            names(prior_ls$eff) == names(kcoef$eff))    
-  stopifnot(names(prec_ls$spl) == names(kcoef$spl),
-            names(prec_ls$eff) == names(kcoef$eff))  
+  ## make sure the names of precision/prior are in the same order as kprec
+  stopifnot(names(prior_ls$spl) == names(kprec$spl),
+            names(prior_ls$eff) == names(kprec$eff))    
+  stopifnot(names(prec_ls$spl) == names(kprec$spl),
+            names(prec_ls$eff) == names(kprec$eff))  
   
   for (k in seq.int(-burn + 1, size)) {
-    kprec <- update_precs_v4(kcoef, y, prior_ls, prec_ls)
     kcoef <- update_coefs_v4(y, Bmat, Xmat, xBs, kprec, debug)
+    kprec <- update_precs_v4(kcoef, y, prior_ls, prec_ls)
     
     ## print progress
     if (k %% floor(size / 5) == 0) {
