@@ -188,9 +188,11 @@ fit_bs_splines_v4 <- function(fixed, data, spline, random = NULL,
 
   ## if no prec or prior is given
   if (is.null(prec) && is.null(prior)) {
-    prior <- get_prior(fit_Bmat, fit_Xmat, a = 0.001, b = 0.001, v = 3)
+    ## prior <- get_prior(fit_Bmat, fit_Xmat, a = 0.001, b = 0.001, v = 3)
+    prior <- get_prior(fit_Bmat, fit_Xmat, a = -0.5, b = 0, v = -1)
   } else {
-    prior <- get_prior(fit_Bmat, fit_Xmat, a = 0.001, b = 0.001, v = 3)
+    ## prior <- get_prior(fit_Bmat, fit_Xmat, a = 0.001, b = 0.001, v = 3)
+    prior <- get_prior(fit_Bmat, fit_Xmat, a = -0.5, b = 0, v = -1)
     message('For the time being, prior cannot be manually specified.')
   }
   
@@ -314,7 +316,7 @@ parse_spline <- function(fo, data, envir = attr(fo, '.Environment')) {
   } else {
     stop("spline must be a one-sided formula.")
   }
-
+  
   ## current restriction: variables must be in the data
   stopifnot(as.character(qo[c('x', 'by')]) %in% c(names(data), 'NULL'))
   ## eval 'x' and 'by' at data frame first, then env
@@ -377,6 +379,10 @@ s <- function(x, by = NULL, knots = NULL, degree = NULL, intercept = NULL,
   ## a list of positions of the data points for each group
   if (type != 'bs') {
     stop('basis type not implemented yet.')
+  }
+
+  if (!(is.null(by) || is.factor(by))) {
+    stop('by variable must be a factor.')
   }
 
   stopifnot(is.numeric(knots), length(knots) == 1)

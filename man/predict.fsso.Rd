@@ -2,9 +2,9 @@
 % Please edit documentation in R/fit-ridge.R
 \name{predict.fsso}
 \alias{predict.fsso}
-\title{Predict with posterior mean}
+\title{Predict with posterior mean (or with other statistics)}
 \usage{
-\method{predict}{fsso}(object, newdata = NULL, level = NULL)
+\method{predict}{fsso}(object, newdata = NULL, level = NULL, fun = NULL)
 }
 \arguments{
 \item{object}{an 'fsso' object.}
@@ -13,7 +13,11 @@
 
 \item{level}{a string specify the name of the spline. Only the component
 correponding to that spline is returned together with the effect terms).}
+
+\item{fun}{a function applying to the samples of each marginal posterior of
+the regression coefs. By default, it's `mean`.}
 }
 \description{
-Return prediction with the posterior mean of the regression coefficients.
+Return prediction with the posterior mean (or other statistics) of the
+regression coefficients.
 }

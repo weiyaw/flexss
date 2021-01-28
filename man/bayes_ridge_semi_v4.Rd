@@ -19,22 +19,26 @@ bayes_ridge_semi_v4(
 \arguments{
 \item{y}{A vector of the response vector.}
 
-\item{Bmat}{A named list of design matrices for the splines terms with the
-following attributes: 'spl_dim', 'is_sub', 'level'. For subject-specific
-splines (i.e. is_sub = TRUE), it should also have 'block_dim' and
-'index'. For other splines, it should have 'penalty'. At least an element
-of Bmat must be 'is_sub = TRUE'. See details.}
+\item{Bmat}{A named list of design matrices for the splines terms (or a list
+of design matrices of each subject for the subject spline) with at least
+the following attributes: 'spl_dim', 'is_sub', 'level'. For
+subject-specific splines (i.e. is_sub = TRUE), it is a list of matrices and
+should also have 'block_dim' and 'index'. For other splines, it is a matrix
+and should have 'penalty'. At least an element of Bmat must be 'is_sub =
+TRUE'. See details.}
 
-\item{Xmat}{A list of design matrices for the non-spline terms, e.g. fixed
-and random effects.}
+\item{Xmat}{A named list of design matrices for the non-spline terms,
+e.g. fixed and random effects.}
 
 \item{prior}{unknown yet}
 
-\item{prec}{An optional list of precisions with 'theta', 'delta', 'beta' and
-'eps'. If supplied, the precisions of the model are fixed. All the elements
-are square matrices, except 'eps' which is a number. The 'beta' term here
-will override `ranef` (i.e. all the 0 in diagonal will result in the
-corresponding beta being fixed).}
+\item{prec}{An optional named list with three elements 'spl', 'eff' and
+'eps'. If supplied, the precisions of the model are fixed. Each of the
+'spl' and 'eff' terms is a named list of precisions that correspond to
+'Bmat' and 'Xmat' respectively, and the names of the list must match. All
+the elements are square matrices with the dimension matching 'spl_dim' of
+Xmat or Bmat, except 'eps' which is a number. A zero precision will imply
+that the term is fixed.}
 
 \item{init}{An initial values of the regression coefficients for the
 sampler...}
@@ -60,43 +64,55 @@ A list of length two, posterior samples and means are stored in
 \description{
 This is a Gibbs sampler v3 for fitting Bayesian longitudinal semiparametric
 models. It assumes that there are multiple populations in the model and each
-population is modelled by a 'population' curve. Within each population, they
-are multiple subjects, and each subject are modelled by a 'subject'
+population is modelled by a population 'mean' curve. Within each population,
+they are multiple subjects, and each subject are modelled by a 'subject'
 curve. The subject curves are treated as deviations from their respective
-population curves. On top of that, fixed or random effects can be added to
-the model. This is useful when, for example, a particular treatment was
-applied to some of the populations or subjects, and the user is interested in
-the effect of the treatment.
+mean curves. On top of that, fixed or random effects can be added to the
+model. This is useful when, for example, a particular treatment was applied
+to some of the populations or subjects, and the user is interested in the
+effect of the treatment.
 }
 \details{
-The population and subject curves are modelled as linear (in statistical
-sence, not only stright lines). This includes polynomials and splines.
+The mean and subject curves are modelled as linear (in statistical sence, not
+only stright lines). This includes polynomials and splines. The attributes of
+their design matrices (i.e. Bmat) are
+
+'spl_dim' is the dimension of the splines.
+
+'is_sub' is a boolean that specifies whether the spline term is a
+subject-specific deviations.
+
+'level' is the name of each population or subject. NA if there is only one
+population.
 
 'index' is a list of numeric vector specifying the position of rows for each
-  level of the factor. The precision of the prior of the regression
-  coefficient is up to a multiplicative constant of crossprod('penalty').
+  subject. Only applicable for subject curves.
 
- The mathematical model is
+'block_dim' is the dimension of the subject deviations where the precision
+should be considered as a block. See paper for more details.
 
-y_i = Bmat$pop_i %*% \theta_i + Bmat$sub_i %*% \delta_i + Xmat_i %*% \beta +
-\epsilon_i
+'penalty' relates to the precision of the prior of the mean curve
+  coefficient, which is a multiple of crossprod('penalty'), i.e. ('penalty'
+  %*% \theta_i) is shrunk to 0.
 
-where 'i' is the index of subjects, y_i is a vector of observation for the
-i^{th} subjectm, Bmat$pop_i and Bmat$sub_i are the model/design matrices for
-the population and subject curves (of the i^{th} subject) respectively, and
-\epsilon_i are Gaussian errors. The \theta_i should be intepreted as the
-regression coefficients of the population curve of the i^{th} subject, and
-the subjects belonging to the same population will have the same \theta. This
-implies that some of the \theta_i will be identical. However, \delta_i will
-be different for each subject, while \beta will be the same for all subjects.
+The semiparametric model is
+
+y = Bmat[[1]] %*% \theta_1 + ... + Xmat[[1]] %*% \beta_1 + ... + Bmat[[sub]]
+%*% \delta + \epsilon
+
+y is a vector of observation, Bmat[[...]] %*% \theta are the splines that
+constitute the mean curve, Xmat[[...]] %*% \beta are the fixed/random
+effects, Bmat[[sub]] %*% \deltais the subject-specific deviations, and
+\epsilon are Gaussian errors.
 
 The coefficients \theta, \delta, \beta and \epsilon are all Gaussian, but
 their covariance structures are not necessarily diagonal. Consult the
 manual/paper for more info.
 
-The sampler first updates the precision, then the coefficients. The joint
+The sampler first updates the coefficients, then the precisions. The joint
 conditional posterior of all the coefficients is often highly correlated, but
 fortunately a closed-form expression is available and is utilised here. This
 implies that the convergence of this Gibbs sampler is quick and does not
-require burning many samples in the beginning.
+require burning many samples in the beginning. The starting values of the
+sampler are precisions with a reasonably large value (hence a large penalty).
 }

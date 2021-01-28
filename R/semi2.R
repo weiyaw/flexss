@@ -842,7 +842,7 @@ pstats_v4 <- function(samples, fun) {
 }
 
 check_Bmat <- function(Bmat) {
-
+  
   check_each_Bmat <- function(x, x_name) {
     if (is.null(attr(x, 'spl_dim'))) {
       stop('spl_dim not specified in ', x_name, '.')
@@ -852,7 +852,8 @@ check_Bmat <- function(Bmat) {
     } 
 
     if (attr(x, 'is_sub')) {
-      if (!(is.list(x) && all(purrr::map_lgl(x, is.matrix)))) {
+      if (!(is.list(x) &&
+              all(purrr::map_lgl(x, ~is.matrix(.x) || methods::is(.x, 'Matrix'))))) {
         stop(x_name, ' must be a list of matrices.')
       }
       if (is.null(attr(x, 'index'))) {
@@ -868,7 +869,7 @@ check_Bmat <- function(Bmat) {
         stop('no block_dim in the subject term.')
       }
     } else {
-      if (!is.matrix(x)) {
+      if (!(is.matrix(x) || methods::is(x, 'Matrix'))) {
         stop(x_name, ' must be a matrix.')
       }
       if (NCOL(x) != (attr(x, 'spl_dim') * length(attr(x, 'level')))) {
