@@ -1,7 +1,12 @@
 ## inverse of a symmetrical, positive definite matrix
-pdinv <- function(x) {
-  ## HERE: NUMERICAL ISSUE
-  stopifnot(Matrix::isSymmetric(x, tol = .Machine$double.eps * 10000))
+pdinv <- function(x, tol = .Machine$double.eps * 100000) {
+  ## HERE: POTENTIAL NUMERICAL ISSUE, MIGHT NEED TO ADJUST TOLERANCE
+  if (!Matrix::isSymmetric(x, tol = tol)) {
+    if (any((x - Matrix::t(x)) > tol)) {
+      message('asymmetrical pd matrix.')
+      x <- (x + Matrix::t(x)) / 2      
+    }
+  }
   ## use 'dpoMatrix' only if we can guarantee x is pd
   ## xpd <- as(Matrix::forceSymmetric(x), 'dpoMatrix')
   Matrix::forceSymmetric(Matrix::solve(x))
@@ -218,8 +223,6 @@ initialise_v4 <- function(Bmat, Xmat, y) {
     if (is.list(x) && attr(x, 'is_sub')) {
       beta_pls <- 0
     } else if (is.matrix(x)) {
-      ##:ess-bp-start::browser@nil:##
-browser(expr=is.null(.ESSBP.[["@3@"]]));##:ess-bp-end:##
       beta_pls <- solve(crossprod(x) + 100 * crossprod(attr(x, 'penalty'))) %*%
         crossprod(x, y)
     } else {
@@ -271,8 +274,7 @@ initialise_prec_v4 <- function(Bmat, Xmat, y) {
 
   list(spl = purrr::map(Bmat, spl_prec),
        eff = purrr::map(Xmat, eff_prec),
-       eps = 1 / sd(y))
-
+       eps = 1 / stats::sd(y))
 
   ## list(spl = purrr::map2(kcoef$spl, prior_ls$spl, update_prec_spline),
   ##      eff = purrr::map2(kcoef$eff, prior_ls$eff, update_prec_effect),
