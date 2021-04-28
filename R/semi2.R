@@ -19,20 +19,6 @@ tquadprod <- function(x, A) {
   Matrix::forceSymmetric(res)
 }
 
-## Recursively check if the list structure matches. Also check if the names
-## match, if the names are present.
-is_matchls <- function(ls1, ls2) {
-  if (is.list(ls1) && is.list(ls2)) {
-    length(ls1) == length(ls2) &&
-      all(names(ls1) == names(ls2),
-          purrr::map2_lgl(ls1, ls2, is_matchls))
-  } else if (is.list(ls1) || is.list(ls2)) {
-    warning('unbalance list.')
-    FALSE
-  } else {
-    TRUE
-  }
-}
 
 ## ## the rows of Kmat must be independent
 ## check_Kmat <- function(Kmat) {
@@ -816,6 +802,30 @@ update_precs_v4 <- function(kcoef, y, prior_ls, init_prec = NULL) {
 ##   datals
 ## }
 
+
+recursive <- function(x, fun) {
+  if (is.list(x)) {
+    lapply(x, recursive, fun = fun)
+  } else {
+    fun(x)
+  }
+}
+
+## Recursively check if the list structure matches. Also check if the names
+## match, if the names are present.
+is_match_list <- function(ls1, ls2) {
+  if (is.list(ls1) && is.list(ls2)) {
+    length(ls1) == length(ls2) &&
+      all(names(ls1) == names(ls2),
+          purrr::map2_lgl(ls1, ls2, is_matchls))
+  } else if (is.list(ls1) || is.list(ls2)) {
+    warning('unbalance list.')
+    FALSE
+  } else {
+    TRUE
+  }
+}
+
 ## calculate posterior mean from an array or vector of samples recursively down
 ## a list. The samples are populated along the last dimension, e.g. the
 ## columns of a matrix are the samples; the depth of a 3D array are the samples.
@@ -843,6 +853,29 @@ pstats_v4 <- function(samples, fun) {
     stop("Invalid samples structure.")
   }
 }
+
+#' Convert precision to variance/covariance
+#'
+#' Convert precision (matrices) to variance/covariance (matrices). If given a
+#' list, the conversion is done recursively down the list.
+#'
+#' @param prec a vector of precision, an array of precision matrices, or a list
+#'
+#' @return variance, covariance matrix, or a list
+prec_to_cov <- function(prec) {
+  if (is.list(prec)) {
+    purrr::map(prec, prec_to_cov)
+  } else if (is.vector(prec, mode = 'numeric')) {
+    1 / prec
+  } else if (is.array(prec) && length(dim(prec)) == 3) {
+    size <- dim(prec)[3]
+    for (i in 1:size) {
+      prec[, , i] <- chol2inv(chol(prec[, , i]))
+    }
+    prec
+  }
+}
+
 
 check_Bmat <- function(Bmat) {
   
