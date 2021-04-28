@@ -131,13 +131,25 @@ fit_bs_splines <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
 #' matrix of order \code{deg + 1}. The knots are equally spaced between
 #' \code{range(data$x)}.
 #'
+#' The intercepts for all splines, other than the subject-specific splines, are
+#' removed by default. This is to ensure that the intercept term in the spline
+#' is not spanning the same space as the (potential) main effect terms (and
+#' consequently having an unidentifiable model). For subject-specific splines,
+#' all the coefficients are penalised, so including an intercept will not result
+#' in an unidentifiable model.
+#'
+#'  Therefore, the intercept should be added manually either by setting
+#' 'intercept = TRUE' or adding it as fixed effects. 
+#' 
 #' @param fixed A formula y ~ x1 + x2 ... specifying the response and fixed
-#'   effects
+#'   effects. This routine looks up the variable from the data, before looking
+#'   at the environment where the formula is defined.
 #' @param data A data frame with at least three columns (\code{x}, \code{y} and
 #'   \code{sub}). If a \code{pop} column is also given, separate mean curves are
 #'   fitted to each population.
 #' @param spline A list of formulae of splines s(x, by =, K = , deg = ,
-#'   ...). See `s` for more details.
+#'   ...). This routine looks up the variable from the data, before looking
+#'   at the environment where the formula is defined. See `s` for more details.
 #' @param random A formula ~ u1 + u2 ... specifying the random effect term.
 #' @param size The number of samples to be drawn from the posterior.
 #' @param burn The number of samples to burn before recording. Default to
@@ -174,7 +186,7 @@ fit_bs_splines_v4 <- function(fixed, data, spline, random = NULL,
   effect_obj <- purrr::map(purrr::compact(list(fixed = fixed, random = random)),
                            parse_effect, data = fit_data)
   response <- parse_response(fixed, fit_data)
-  
+  ## LOOK AT FIXED EFFECT, NEED TO GIVE IT A NAME
   if (length(setdiff(names(spline_obj), '')) != length(spline_obj)) {
     names(spline_obj) <- paste0('spl', 1:length(spline_obj))
     message('Spline names overriden.')
@@ -276,7 +288,9 @@ detect_sub <- function(fo, envir = attr(fo, '.Environment')) {
 
 ## return a formula for the subject-specific spline with 'block_dim' and
 ## 'intercept' arguments if they are not present. Also check if all the
-## necessary arguments are present.
+## necessary arguments are present. By dedault, an intercept is added to subject
+## curves, and block_dim is set to 'degree' (for subject curves without an
+## intercept) or 'degree + 1' (for subject curves with an intercept).
 ## fo: a formula
 ## return: a formula
 tidy_sub <- function(fo, envir = attr(fo, '.Environment')) { 
@@ -285,16 +299,19 @@ tidy_sub <- function(fo, envir = attr(fo, '.Environment')) {
             !is.null(qo[['by']]),
             !is.null(qo[['knots']]),
             !is.null(qo[['degree']]))
-  
-  if (is.null(qo[['block_dim']])) {
-    qo[['block_dim']] <- eval(qo[['degree']], envir = envir) + 1
-    message('block_dim of subject spline set to ', qo[['block_dim']], '.')
-  }
-  
+    
   if (is.null(qo[['intercept']])) {
     qo[['intercept']] <- TRUE
     message('Add an intercept to the subject spline.')
   }
+  
+  if (is.null(qo[['block_dim']])) {
+    ## depending on whether there's an intercept in the model
+    qo[['block_dim']] <- eval(qo[['degree']], envir = envir) +
+      eval(qo[['intercept']], envir = envir)
+    message('block_dim of subject spline set to ', qo[['block_dim']], '.')
+  }
+
   fo[[2]] <- qo
   fo
 }
@@ -302,11 +319,12 @@ tidy_sub <- function(fo, envir = attr(fo, '.Environment')) {
 ## transform formula to bs model mat (and associated details)
 ## fo: ~s(x, by = , knots = , deg =, ...)
 ## data: the data
+## spl_names: name of the spline, to be append at the start of the 'by' variable
 ## env: envioronment which the formula should be evaluated; default to the
 ## environment where the formula was defined. 'x' and 'by' are evaluated
 ## at the data.
 ## return: list(model_mat, trans_mat, index, degree, type, knots)
-parse_spline <- function(fo, data, envir = attr(fo, '.Environment')) {
+parse_spline <- function(fo, spl_name, data, envir = attr(fo, '.Environment')) {
   if (class(fo) == 'formula' && length(fo) == 2) {
     if (fo[[2]][[1]] == 's') {
       qo <- match.call(s, fo[[2]]) # qo = quote
@@ -317,15 +335,15 @@ parse_spline <- function(fo, data, envir = attr(fo, '.Environment')) {
     stop("spline must be a one-sided formula.")
   }
   
-  ## current restriction: variables must be in the data
-  stopifnot(as.character(qo[c('x', 'by')]) %in% c(names(data), 'NULL'))
+  ## ## current restriction: variables must be in the data
+  ## stopifnot(as.character(qo[c('x', 'by')]) %in% c(names(data), 'NULL'))
   ## eval 'x' and 'by' at data frame first, then env
   arg_data <- purrr::map(qo[c('x', 'by')], eval, envir = data, enclos = envir)
 
   ## eval the rest (i.e. all except the 'x' and 'by') at env only
   rest <- setdiff(names(qo), c('', 'x', 'by'))
   arg_env <- purrr::map(qo[rest], eval, envir = envir)
-
+  
   stopifnot(length(arg_data) == 2, names(arg_data) %in% c('', 'x', 'by'))
   c(list(call = qo), do.call(s, c(arg_data, arg_env)))
   ## s(x, by, knots, degree, intercept, penalty, type = 'bs')
@@ -343,12 +361,10 @@ parse_spline <- function(fo, data, envir = attr(fo, '.Environment')) {
 #' zero, the fit is a polynomial.
 #'
 #' Since the polynomial (which includes lines parallel to the x-axis) terms are
-#' not penalised, the intercept term in the polynomial is removed by default to
-#' avoid spanning the same space as the (potential) main effect
-#' terms. Therefore, the intercept should be added manually either by setting
-#' 'intercept = TRUE' or adding it as fixed effects. For subject-specific
-#' splines, all the coefficients are penalised, so including an intercept will
-#' not result in an unidentifiable model.
+#' not penalised, the intercept term in the polynomial should be removed to
+#' avoid spanning the same space as the (potential) main effect terms. For
+#' subject-specific splines, all the coefficients are penalised, so including an
+#' intercept will not result in an unidentifiable model.
 #'
 #' Due to the way which B-spline basis is parameterised and transformed, it is
 #' advisable to treat the first 'degree + 1' coefficients of the
@@ -362,20 +378,21 @@ parse_spline <- function(fo, data, envir = attr(fo, '.Environment')) {
 #' @param knots the number of internal knots.
 #' @param degree the degree of spline.
 #' @param intercept TRUE/FALSE whether an intercept should be included in the
-#'   spline. By default, the intercept is removed unless this is a
-#'   subject-specific spline.
+#'   spline.
 #' @param type the type of basis function. Currently only B-spline ('bs') is
 #'   supported.
 #' @param is_sub is this the subject-specific curves?
 #' @param block_dim the (first) number of terms in the subject-specific curves
-#'   that should be treated as a block, rather than i.i.d. Only applicable to
-#'   subject-specific curves and default to `degree` + 1.
+#'   that should be treated as a block, rather than i.i.d.
 s <- function(x, by = NULL, knots = NULL, degree = NULL, intercept = NULL,
               type = 'bs', is_sub = FALSE, block_dim = NULL) {
 
   res <- list(degree = degree,
               intercept = intercept,
-              type = type)
+              type = type,
+              is_sub = is_sub,
+              block_dim = block_dim)
+
   ## a list of positions of the data points for each group
   if (type != 'bs') {
     stop('basis type not implemented yet.')
@@ -398,7 +415,8 @@ s <- function(x, by = NULL, knots = NULL, degree = NULL, intercept = NULL,
     cp <- cbind(matrix(0, knots, degree), diag(knots)) # compact penalty
   }
 
-  cmm <- dmatinfo$design %*% res$trans_mat # compact model matrix
+  cmm <- dmatinfo$design %*% res$trans_mat         # compact model matrix
+  stopifnot(is.null(by) || length(by) == NROW(cmm)) # otherwise will screw up predict(.)
   if (is_sub) {
     ## check if sub index is continuous, bcoz assuming Bmat$sub is block diagonal
     index <- split(1:length(by), by)
@@ -410,7 +428,7 @@ s <- function(x, by = NULL, knots = NULL, degree = NULL, intercept = NULL,
     attr(res$model_mat, 'index') <- index
   } else {
     if (is.null(by)) {
-      level <- NA
+      level <- 'mean'
       res$model_mat <- cmm
     } else {
       level <- unique(by)
@@ -440,8 +458,9 @@ parse_response <- function(fo, data, envir = attr(fo, '.Environment')) {
     stop("response required.")
   }
   
-  ## current restriction: variables must be in the data
-  stopifnot(as.character(attr(mt, 'variables')[[2]]) %in% names(data))
+  ## ## current restriction: variables must be in the data
+  ## stopifnot(as.character(attr(mt, 'variables')[[2]]) %in% names(data))
+
   list(terms = mt,
        y = eval(attr(mt, 'variables')[[2]], data, envir))
 }
@@ -460,8 +479,9 @@ parse_effect <- function(fo, data, envir = attr(fo, '.Environment')) {
     attr(mt, 'dataClasses') <- purrr::map_chr(eval_variable, stats::.MFclass)
     names(attr(mt, 'dataClasses')) <- as.character(attr(mt, 'variable')[-1])
 
-    ## current restriction: variables must be in the data
-    stopifnot(attr(mt, 'term.labels') %in% names(data))
+    ## ## current restriction: variables must be in the data
+    ## stopifnot(attr(mt, 'term.labels') %in% names(data))
+
     ## mm: model matrix, all terms must exist in data
     mm <- stats::model.matrix(mt, data)
 
@@ -504,12 +524,12 @@ predict_grp2 <- function(model_mat, by, coefs) {
     stopifnot(length(dim(coefs)) == 2)
     model_mat %*% coefs
   } else {
-    stopifnot(unique(by) %in% colnames(coef),
+    stopifnot(unique(by) %in% colnames(coefs),
               length(by) == NROW(model_mat))
     res <- matrix(NA, nrow = length(by), ncol = dim(coefs)[3])
     for (l in unique(by)) {
       idx <- by == l
-      res[idx, ] <- model_mat[idx, ] %*% coef[, as.character(l), ]
+      res[idx, ] <- model_mat[idx, ] %*% coefs[, as.character(l), ]
     }
     res
   }
@@ -539,6 +559,7 @@ predict.fsso <- function(object, newdata = NULL, level = NULL, fun = NULL) {
   }  
 
   predict_spl_i <- function(spl, coefs) {
+    ## 'x' and 'by' variable must be in newdata, otherwise throw an error
     x <- eval(spl$call[['x']], newdata, baseenv())
     ## x <- newdata[[as.character(spl$call[['x']])]]
     model_mat <- get_model_mat(x, spl)

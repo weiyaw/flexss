@@ -25,8 +25,7 @@ s(
 \item{degree}{the degree of spline.}
 
 \item{intercept}{TRUE/FALSE whether an intercept should be included in the
-spline. By default, the intercept is removed unless this is a
-subject-specific spline.}
+spline.}
 
 \item{type}{the type of basis function. Currently only B-spline ('bs') is
 supported.}
@@ -34,8 +33,7 @@ supported.}
 \item{is_sub}{is this the subject-specific curves?}
 
 \item{block_dim}{the (first) number of terms in the subject-specific curves
-that should be treated as a block, rather than i.i.d. Only applicable to
-subject-specific curves and default to `degree` + 1.}
+that should be treated as a block, rather than i.i.d.}
 }
 \description{
 Return the design matrix of a spline.
@@ -47,12 +45,10 @@ of the coefficients are shrunk to zero so that when all of these terms are
 zero, the fit is a polynomial.
 
 Since the polynomial (which includes lines parallel to the x-axis) terms are
-not penalised, the intercept term in the polynomial is removed by default to
-avoid spanning the same space as the (potential) main effect
-terms. Therefore, the intercept should be added manually either by setting
-'intercept = TRUE' or adding it as fixed effects. For subject-specific
-splines, all the coefficients are penalised, so including an intercept will
-not result in an unidentifiable model.
+not penalised, the intercept term in the polynomial should be removed to
+avoid spanning the same space as the (potential) main effect terms. For
+subject-specific splines, all the coefficients are penalised, so including an
+intercept will not result in an unidentifiable model.
 
 Due to the way which B-spline basis is parameterised and transformed, it is
 advisable to treat the first 'degree + 1' coefficients of the

@@ -363,20 +363,19 @@ calc_Qmat_inv_v4 <- function(Xmat, PhixX, Sigma_inv, eps_inv) {
     NULL
   } else {
     XtX <- Matrix::crossprod(Xmat, PhixX)
-    ## if (is.null(Sigma_inv)) {
-    ##   ## do nothing, if it's a fixed effect/spline
-    ##   pdinv(XtX)
-    ## } else {
-    ## add precisions if it's random
+    sigma_ratio <- sign(Sigma_inv) * exp(log(abs(Sigma_inv)) - log(eps_inv))
+    
     spl_dim <- attr(Xmat, 'spl_dim')
     if (is.null(spl_dim)) {
       ## if it's an effect Xmat (i.e. Xmat)
-      pdinv(XtX + Sigma_inv / eps_inv)
+      ## if it's a fixed effect, sigma_ratio should be 0
+      ## eps_inv is strictly positive
+      pdinv(XtX + sigma_ratio)
     } else {
       ## if it's a spline Xmat (i.e. Bmat)
       for (i in seq_along(attr(Xmat, 'level'))) {
         idx <- seq.int(to = spl_dim * i, length.out = spl_dim)
-        XtX[idx, idx] <- XtX[idx, idx] + Sigma_inv / eps_inv
+        XtX[idx, idx] <- XtX[idx, idx] + sigma_ratio
       }
       pdinv(XtX)
       ## }
@@ -449,7 +448,8 @@ calc_Rmat_v4 <- function(presid, PhixX, index = NULL) {
 gen_coefs <- function(Qmat_inv, Rmat, eps_inv) {
   gen_coefs_i <- function(x, y) {
     mu <- as.numeric(Matrix::tcrossprod(x, y))
-    Sigma <- as.matrix(x / eps_inv)
+    ## eps_inv is strictly positive
+    Sigma <- as.matrix(sign(x) * exp(log(abs(x)) - log(eps_inv)))
     MASS::mvrnorm(1, mu, Sigma)
   }
   if (is.list(Qmat_inv) || is.list(Rmat)) {
@@ -587,8 +587,10 @@ update_coefs_v4 <- function(y, Bmat, Xmat, xBs, kprec, debug = FALSE) {
   ## Qmat0 (Qmat[[1]]) <- map(xBs, ~.x + prec)
   ## Phi1 <- map(Bmat[[1]], Qmat_inv[[1]], ~I - tquadprod(.x, .y))
 
+  ## subject-specific terms
   PhixX[[1]] <- Bmat[[1]]
-  Qmat_inv[[1]] <- purrr::map(xBs, ~pdinv(.x + allprec[[1]] / kprec$eps))
+  sigma_sub_ratio <- sign(allprec[[1]]) * exp(log(abs(allprec[[1]])) - log(kprec$eps))
+  Qmat_inv[[1]] <- purrr::map(xBs, ~pdinv(.x + sigma_sub_ratio))
   Phi <- NULL
 
   ## calculate Qmat_inv
@@ -829,7 +831,6 @@ pmean_v4 <- function(samples) {
   }
 }
 
-
 pstats_v4 <- function(samples, fun) {
   fun <- purrr::as_mapper(fun)
   if (is.array(samples)) {
@@ -1064,7 +1065,7 @@ bayes_ridge_semi_v4 <- function(y, Bmat, Xmat,
     kprec <- update_precs_v4(kcoef, y, prior_ls, prec_ls)
     
     ## print progress
-    if (k %% floor(size / 5) == 0) {
+    if (isTRUE(k %% floor(size / 5) == 0)) {
       message(k, " samples generated.")
     }
 

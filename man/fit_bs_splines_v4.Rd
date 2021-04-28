@@ -19,14 +19,16 @@ fit_bs_splines_v4(
 }
 \arguments{
 \item{fixed}{A formula y ~ x1 + x2 ... specifying the response and fixed
-effects}
+effects. This routine looks up the variable from the data, before looking
+at the environment where the formula is defined.}
 
 \item{data}{A data frame with at least three columns (\code{x}, \code{y} and
 \code{sub}). If a \code{pop} column is also given, separate mean curves are
 fitted to each population.}
 
 \item{spline}{A list of formulae of splines s(x, by =, K = , deg = ,
-...). See `s` for more details.}
+...). This routine looks up the variable from the data, before looking
+at the environment where the formula is defined. See `s` for more details.}
 
 \item{random}{A formula ~ u1 + u2 ... specifying the random effect term.}
 
@@ -56,4 +58,14 @@ samples drawing from the posterior distribution associated to each regression
 coefficients. The population (mean) curves are penalised with a difference
 matrix of order \code{deg + 1}. The knots are equally spaced between
 \code{range(data$x)}.
+
+The intercepts for all splines, other than the subject-specific splines, are
+removed by default. This is to ensure that the intercept term in the spline
+is not spanning the same space as the (potential) main effect terms (and
+consequently having an unidentifiable model). For subject-specific splines,
+all the coefficients are penalised, so including an intercept will not result
+in an unidentifiable model.
+
+ Therefore, the intercept should be added manually either by setting
+'intercept = TRUE' or adding it as fixed effects.
 }

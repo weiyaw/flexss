@@ -90,7 +90,10 @@ fix <- y ~ pop + effect1 + effect2
 set.seed(1)
 load_all()
 fm5 <- fit_bs_splines_v4(fixed = fix, data = simdata3, spline = spl,
-                         size = 500, burn = 0, ridge = FALSE, init = NULL)
+                         size = 4, burn = 0, ridge = FALSE, init = NULL)
+
+load_all()
+flatten_chain(fm5)
 
 predict(fm5)
 predict(fm5, level = 'pop')
