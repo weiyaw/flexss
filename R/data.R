@@ -1,6 +1,8 @@
-get_simdata2 <- function(seed = 1) {
+get_simdata2 <- function(seed = 1, coef = FALSE) {
 
-  ## 10 quadratic spline with 3 interior knots, coming from 3 populations
+  ## 10 quadratic spline with 3 interior knots, coming from 3 populations.
+  ## Return the true coefs if coef == TRUE.
+
   set.seed(seed)
   x <- 1:20 + stats::rnorm(20, sd = 0.1) # 20 samples for each subject
   K <- 3
@@ -23,23 +25,26 @@ get_simdata2 <- function(seed = 1) {
                   dimnames = list(NULL, seq(1, n_pops)))
   delta <- matrix(stats::rnorm(n_subs * dim_delta) * 0.5, dim_delta, n_subs)
   
-  f <- unlist(purrr::imap(n_subs_in_pop, ~rep(Bmat %*% theta[, .y], .x)), F, F)
-  g <- c(Bmat %*% delta)
-  y <- f + g + stats::rnorm(length(f), sd = 0.2)
-
-  data.frame(y = y, x = rep(x, n_subs),  sub = grp$sub, pop = grp$pop, truth = f + g)
+  if (coef) {
+    list(theta = theta, delta = delta, x = rep(x, n_subs), sub = grp$sub, pop = grp$pop)
+  } else {
+    f <- unlist(purrr::imap(n_subs_in_pop, ~rep(Bmat %*% theta[, .y], .x)), FALSE, FALSE)
+    g <- c(Bmat %*% delta)
+    y <- f + g + stats::rnorm(length(f), sd = 0.2)
+    data.frame(y = y, x = rep(x, n_subs), sub = grp$sub, pop = grp$pop, truth = f + g)
+  }
 }
 
 
-get_simdata3 <- function(seed = 1) {
-
+get_simdata3 <- function(seed = 1, coef = FALSE) {
+  
   ## same set up as simdata2, but with two extra effect terms
-  data <- get_simdata2(seed = seed)
+  res <- get_simdata2(seed = seed, coef)
   ## effect1: sub 1, 3, 5, 7, 9 has level 1, the rest level 0
-  data$effect1 <- as.factor(as.numeric(data$sub) %% 2)
+  res$effect1 <- as.factor(as.numeric(res$sub) %% 2)
   ## effect2: sub 1, 4, 7, 10 has level 1, sub 2, 5, 8 has level 2, the rest level 0
-  data$effect2 <- as.factor(as.numeric(data$sub) %% 3)
-  data
+  res$effect2 <- as.factor(as.numeric(res$sub) %% 3)
+  res
 }
 
 
