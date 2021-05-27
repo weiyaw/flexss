@@ -26,7 +26,7 @@ get_simdata2 <- function(seed = 1, coef = FALSE) {
   delta <- matrix(stats::rnorm(n_subs * dim_delta) * 0.5, dim_delta, n_subs)
   
   if (coef) {
-    list(theta = theta, delta = delta, x = rep(x, n_subs), sub = grp$sub, pop = grp$pop)
+    list(theta = theta, delta = delta)
   } else {
     f <- unlist(purrr::imap(n_subs_in_pop, ~rep(Bmat %*% theta[, .y], .x)), FALSE, FALSE)
     g <- c(Bmat %*% delta)
@@ -39,11 +39,28 @@ get_simdata2 <- function(seed = 1, coef = FALSE) {
 get_simdata3 <- function(seed = 1, coef = FALSE) {
   
   ## same set up as simdata2, but with two extra effect terms
-  res <- get_simdata2(seed = seed, coef)
-  ## effect1: sub 1, 3, 5, 7, 9 has level 1, the rest level 0
-  res$effect1 <- as.factor(as.numeric(res$sub) %% 2)
-  ## effect2: sub 1, 4, 7, 10 has level 1, sub 2, 5, 8 has level 2, the rest level 0
-  res$effect2 <- as.factor(as.numeric(res$sub) %% 3)
+  res <- get_simdata2(seed, coef)
+  if (coef) {
+    ## mean of level 1 is 1 unit larger
+    res$effect1 <- c(0, 1)
+    # mean of level 1 is 1 unit larger, level 2 is 2 units smaller
+    res$effect2 <- c(0, 1, -2)
+  } else {
+    ## effect1: sub 1, 3, 5, 7, 9 has level 1, the rest level 0
+    res$effect1 <- as.factor(as.numeric(res$sub) %% 2)
+    ## mean of level 1 is 1 unit larger
+    res$y[res$effect1 == 1] <- res$y[res$effect1 == 1] + 1
+    res$truth[res$effect1 == 1] <- res$truth[res$effect1 == 1] + 1
+
+    ## effect2: sub 1, 4, 7, 10 has level 1, sub 2, 5, 8 has level 2, the rest level 0
+    res$effect2 <- as.factor(as.numeric(res$sub) %% 3)
+    ## mean of level 1 is 1 unit larger
+    res$y[res$effect2 == 1] <- res$y[res$effect2 == 1] + 1 
+    res$truth[res$effect2 == 1] <- res$truth[res$effect2 == 1] + 1 
+    ## mean of level 1 is 2 units smaller
+    res$y[res$effect2 == 2] <- res$y[res$effect2 == 2] - 2
+    res$truth[res$effect2 == 2] <- res$truth[res$effect2 == 2] - 2
+  }
   res
 }
 
