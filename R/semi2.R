@@ -883,6 +883,9 @@ check_Bmat <- function(Bmat) {
     if (is.null(attr(x, 'spl_dim'))) {
       stop('spl_dim not specified in ', x_name, '.')
     }
+    if (is.null(attr(x, 'is_sub'))) {
+      stop('is_sub not specified in ', x_name, '.')
+    } 
     if (is.null(attr(x, 'level'))) {
       stop('level not specified in ', x_name, '.')
     } 
@@ -892,14 +895,17 @@ check_Bmat <- function(Bmat) {
               all(purrr::map_lgl(x, ~is.matrix(.x) || methods::is(.x, 'Matrix'))))) {
         stop(x_name, ' must be a list of matrices.')
       }
+      if (!all(purrr::map_dbl(x, NCOL) == attr(x, 'spl_dim'))) {
+        stop('number of cols of ', x_name, ' mismatch with spl_dim and level.')
+      } 
       if (is.null(attr(x, 'index'))) {
         stop('no index in the subject term.')
       }
       if (!is.list(attr(x, 'index'))) {
         stop('index in the subject term must be a list.')
       }
-      if (!all(names(attr(x, 'index')) %in% attr(x, 'level'))) {
-        stop('names of the index in the subject term must exist in level.')
+      if (!identical(sort(names(attr(x, 'index'))), sort(attr(x, 'level')))) {
+        stop('names of the index and level in the subject term must match up.')
       }
       if (is.null(attr(x, 'block_dim'))) {
         stop('no block_dim in the subject term.')
@@ -911,7 +917,6 @@ check_Bmat <- function(Bmat) {
       if (NCOL(x) != (attr(x, 'spl_dim') * length(attr(x, 'level')))) {
         stop('number of cols of ', x_name, ' mismatch with spl_dim and level.')
       } 
-
       if (is.null(attr(x, 'penalty'))) {
         stop('penalty not specified in ', x_name, '.')
       }
@@ -924,7 +929,6 @@ check_Bmat <- function(Bmat) {
   if (sum(purrr::map_lgl(Bmat, ~attr(.x, 'is_sub'))) != 1) {
     stop('must include one and only one term for subject-specific curves.')
   }
-
   purrr::iwalk(Bmat, check_each_Bmat)
 }
 
@@ -961,13 +965,13 @@ check_Xmat <- function(Xmat) {
 #' only stright lines). This includes polynomials and splines. The attributes of
 #' their design matrices (i.e. Bmat) are
 #'
-#' 'spl_dim' is the dimension of the splines.
+#' 'spl_dim' is the dimension of the spline coefficients.
 #' 
 #' 'is_sub' is a boolean that specifies whether the spline term is a
 #' subject-specific deviations.
 #'
-#' 'level' is the name of each population or subject. NA if there is only one
-#' population.
+#' 'level' is the name of each population or subject. Use a dummy name if there
+#' is only one level.
 #'
 #' 'index' is a list of numeric vector specifying the position of rows for each
 #'   subject. Only applicable for subject curves.
@@ -976,7 +980,7 @@ check_Xmat <- function(Xmat) {
 #' should be considered as a block. See paper for more details.
 #' 
 #' 'penalty' relates to the precision of the prior of the mean curve
-#'   coefficient, which is a multiple of crossprod('penalty'), i.e. ('penalty'
+#'   coefficient, which is a multiple of crossprod('penalty'), i.e. crossprod('penalty'
 #'   %*% \theta_i) is shrunk to 0.
 #'
 #' The semiparametric model is
@@ -1001,8 +1005,8 @@ check_Xmat <- function(Xmat) {
 #' sampler are precisions with a reasonably large value (hence a large penalty).
 #' 
 #' @param y A vector of the response vector.
-#' @param Bmat A named list of design matrices for the splines terms (or a list
-#'   of design matrices of each subject for the subject spline) with at least
+#' @param Bmat A named list of design matrices (or a list of design matrices for
+#'   each subject for the subject spline) for the splines terms with at least
 #'   the following attributes: 'spl_dim', 'is_sub', 'level'. For
 #'   subject-specific splines (i.e. is_sub = TRUE), it is a list of matrices and
 #'   should also have 'block_dim' and 'index'. For other splines, it is a matrix
