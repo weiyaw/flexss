@@ -8,8 +8,7 @@ fit_data <- dplyr::mutate(get_simdata2(),
                           sub = as.factor(sub))
 
 spl <- list(pop = ~s(x, by = pop, knots = 3, deg = 2),
-            sub = ~s(x, by = sub, knots = 3, deg = 2,
-                     intercept = TRUE, is_sub = TRUE, block_dim = 3))
+            sub = ~s(x, by = sub, knots = 3, deg = 2, is_sub = TRUE))
 fix <- y ~ pop
 
 set.seed(1)
@@ -31,8 +30,7 @@ fit_data <- dplyr::mutate(get_simdata3(),
                           sub = as.factor(sub))
 
 spl <- list(pop = ~s(x, by = pop, knots = 3, deg = 2),
-            sub = ~s(x, by = sub, knots = 3, deg = 2,
-                     intercept = TRUE, is_sub = TRUE, block_dim = 3))
+            sub = ~s(x, by = sub, knots = 3, deg = 2, is_sub = TRUE))
 fix <- y ~ pop + effect1 + effect2
 
 set.seed(1)

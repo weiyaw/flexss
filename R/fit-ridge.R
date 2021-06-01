@@ -147,9 +147,9 @@ fit_bs_splines <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
 #' @param data A data frame with at least three columns (\code{x}, \code{y} and
 #'   \code{sub}). If a \code{pop} column is also given, separate mean curves are
 #'   fitted to each population.
-#' @param spline A list of formulae of splines s(x, by =, K = , deg = ,
-#'   ...). This routine looks up the variable from the data, before looking
-#'   at the environment where the formula is defined. See `s` for more details.
+#' @param spline A list of formulae of splines s(x, by =, ...). This routine
+#'   looks up the variable from the data, before looking at the environment
+#'   where the formula is defined. See [s()] for more details.
 #' @param random A formula ~ u1 + u2 ... specifying the random effect term.
 #' @param size The number of samples to be drawn from the posterior.
 #' @param burn The number of samples to burn before recording. Default to
@@ -163,6 +163,7 @@ fit_bs_splines <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
 #' @return A list with posterior means, samples and information of the basis
 #'     functions.
 #'
+#' @seealso [s()] for spline specification.
 #' @export
 fit_bs_splines_v4 <- function(fixed, data, spline, random = NULL,
                               size = 1000, burn = 0,
@@ -179,7 +180,6 @@ fit_bs_splines_v4 <- function(fixed, data, spline, random = NULL,
   spline <- purrr::map(spline, ~`[[<-`(.x, 2, match.call(s, .x[[2]])))
   which_sub <- which(purrr::map_lgl(spline, detect_sub))
   stopifnot(length(which_sub) == 1)
-  spline[[which_sub]] <- tidy_sub(spline[[which_sub]])
   fit_data <- data[reorder_data(spline[[which_sub]], data), ]
   
   spline_obj <- purrr::map(purrr::compact(spline), parse_spline, data = fit_data)
