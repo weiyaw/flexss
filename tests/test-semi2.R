@@ -43,7 +43,7 @@ spl$pop <- purrr::map(unique(grp$pop), ~`[<-`(Bmat$pop, grp$pop != .x, , 0)) %>%
   {do.call(cbind, .)}
 attr(spl$pop, 'spl_dim') <- NCOL(spl$pop) / length(unique(grp$pop))
 attr(spl$pop, 'is_sub') <- FALSE
-attr(spl$pop, 'level') <- unique(grp$pop)
+attr(spl$pop, 'level') <- as.character(unique(grp$pop))
 attr(spl$pop, 'penalty') <- diag(4)
 
 spl$sub <- split.data.frame(Bmat$sub, grp$sub)

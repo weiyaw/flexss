@@ -149,16 +149,13 @@ s <- function(x, by = as.factor(1), knots = min(max(1, length(x)/4), 35), degree
     message('block_dim of subject spline set to ', attr(res$model_mat, 'block_dim'), '.')
     attr(res$model_mat, 'index') <- index
   } else {
+
     ## Remove the intercept of the spline to ensure model identifiability. The
     ## intercept shall be fitted as a fixed main effect.
     res$trans_mat <- get_transform_bs(knots + degree + 1, degree + 1)[, -1]
-    cmm <- dmatinfo$design %*% res$trans_mat         # compact model matrix
+    cmm <- dmatinfo$design %*% res$trans_mat           # compact model matrix
     cp <- cbind(matrix(0, knots, degree), diag(knots)) # compact penalty
-    ## if (is.null(by)) {
-    ##   level <- 'mean'
-    ##   res$model_mat <- cmm
-    ## } else {
-    level <- unique(by)
+    level <- levels(by) # this has to match columns in model_mat
     if (length(level) == 1) {
       res$model_mat <- cmm
     } else {

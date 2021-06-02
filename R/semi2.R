@@ -353,12 +353,12 @@ calc_Qmat_inv_v4 <- function(Xmat, PhixX, Sigma_inv, eps_inv) {
     
     spl_dim <- attr(Xmat, 'spl_dim')
     if (is.null(spl_dim)) {
-      ## if it's an effect Xmat (i.e. Xmat)
+      ## if it's an effect Xmat (i.e. Xmat in the paper)
       ## if it's a fixed effect, sigma_ratio should be 0
       ## eps_inv is strictly positive
       pdinv(XtX + sigma_ratio)
     } else {
-      ## if it's a spline Xmat (i.e. Bmat)
+      ## if it's a spline Xmat (i.e. Bmat in the paper)
       for (i in seq_along(attr(Xmat, 'level'))) {
         idx <- seq.int(to = spl_dim * i, length.out = spl_dim)
         XtX[idx, idx] <- XtX[idx, idx] + sigma_ratio
@@ -609,7 +609,7 @@ update_coefs_v4 <- function(y, Bmat, Xmat, xBs, kprec, debug = FALSE) {
   res <- purrr::map(res, ~setNames(.x, sub('^(s|e)', '', names(.x))))
   ## here, Xb is the linear prediction from the subject-specifc splines
   res$yhat <- y - presid + unlist(Xb, use.names = FALSE)
-
+  
   ## convert spl coefs to matrices
   for (l in names(res$spl)) {
     if (attr(Bmat[[l]], 'is_sub')) {
@@ -619,7 +619,9 @@ update_coefs_v4 <- function(y, Bmat, Xmat, xBs, kprec, debug = FALSE) {
                                 block_dim = attr(Bmat[[l]], 'block_dim'))
     } else {
       ## return penalty for generic spline
-      res$spl[[l]] <- structure(matrix(res$spl[[l]], nrow = attr(Bmat[[l]], 'spl_dim')),
+      res$spl[[l]] <- structure(matrix(res$spl[[l]],
+                                       nrow = attr(Bmat[[l]], 'spl_dim'),
+                                       dimnames = list(NULL, attr(Bmat[[l]], 'level'))),
                                 is_sub = FALSE,
                                 penalty = attr(Bmat[[l]], 'penalty'))
     }
@@ -889,6 +891,10 @@ check_Bmat <- function(Bmat) {
     if (is.null(attr(x, 'level'))) {
       stop('level not specified in ', x_name, '.')
     } 
+    if (!is.character(attr(x, 'level'))) {
+      ## This is to ensure that numeric levels will not mess up vector indexing.
+      stop('level in ', x_name, ' has to be a character (vector).')
+    } 
 
     if (attr(x, 'is_sub')) {
       if (!(is.list(x) &&
@@ -970,8 +976,9 @@ check_Xmat <- function(Xmat) {
 #' 'is_sub' is a boolean that specifies whether the spline term is a
 #' subject-specific deviations.
 #'
-#' 'level' is the name of each population or subject. Use a dummy name if there
-#' is only one level.
+#' 'level' is the name of each population or subject. The order of the names
+#' should match the corresponding column entries in Bmat/list of Bmat. Use a
+#' dummy name if there is only one level.
 #'
 #' 'index' is a list of numeric vector specifying the position of rows for each
 #'   subject. Only applicable for subject curves.
@@ -1108,9 +1115,8 @@ bayes_ridge_semi_v4 <- function(y, Bmat, Xmat,
 
     if (k > 0) {
       for (l in names(coef_samples$spl)) {
-        stopifnot(attr(Bmat[[l]], 'level') == dimnames(coef_samples$spline[[l]])[[2]] ||
-                    is.na(attr(Bmat[[l]], 'level')) &&
-                    is.na(dimnames(coef_samples$spline[[l]])[[2]]))
+        stopifnot(isTRUE(all(dimnames(coef_samples$spline[[l]])[[2]] ==
+                               colnames(kcoef$spl[[l]]))))
         coef_samples$spline[[l]][, , k] <- kcoef$spl[[l]]
         prec_samples$spline[[l]][, , k] <- kprec$spl[[l]]
       }
