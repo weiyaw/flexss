@@ -3,7 +3,11 @@ get_simdata2 <- function(seed = 1, coef = FALSE) {
   ## 10 quadratic spline with 3 interior knots, coming from 3 populations.
   ## Return the true coefs if coef == TRUE.
 
-  set.seed(seed)
+  if(!requireNamespace("withr", quietly = TRUE)) {
+    stop("Package \"withr\" needed for this function to work. Please install it.",
+         call. = FALSE)
+  }
+  withr::local_seed(seed = seed)
   x <- 1:20 + stats::rnorm(20, sd = 0.1) # 20 samples for each subject
   K <- 3
   deg <- 2
@@ -38,8 +42,8 @@ get_simdata2 <- function(seed = 1, coef = FALSE) {
 
 get_simdata3 <- function(seed = 1, coef = FALSE) {
   
-  ## same set up as simdata2, but with two extra effect terms
-  res <- get_simdata2(seed, coef)
+  ## same set up as simdata2, but with two extra fixed effect terms
+  res <- get_simdata2(seed = seed, coef = coef)
   if (coef) {
     ## mean of level 1 is 1 unit larger
     res$effect1 <- c(0, 1)

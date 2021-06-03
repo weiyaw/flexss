@@ -9,9 +9,10 @@ test_that("Prediction varies from the truth (multi pop, no fixed effects)", {
               sub = ~s(x, by = sub, knots = 3, deg = 2, is_sub = TRUE))
   fix <- y ~ pop
   
-  set.seed(1)
-  fm <- fit_bs_splines_v4(fixed = fix, data = fit_data, spline = spl,
-                           size = 100, burn = 50, ridge = FALSE, init = NULL)
+  withr::with_seed(1, {
+    fm <- fit_bs_splines_v4(fixed = fix, data = fit_data, spline = spl,
+                            size = 100, burn = 50, ridge = FALSE, init = NULL)
+  })
   
   expect_equal(fit_data$truth, predict(fm), tolerance = 0.03)
   expect_true(all((fit_data$truth - predict(fm)) < mean(abs(fit_data$truth)) * 0.1))
@@ -32,10 +33,11 @@ test_that("Prediction varies from the truth (multi pop, with fixed effects)", {
               sub = ~s(x, by = sub, knots = 3, deg = 2, is_sub = TRUE))
   fix <- y ~ pop + effect1 + effect2
   
-  set.seed(1)
-  fm <- fit_bs_splines_v4(fixed = fix, data = fit_data, spline = spl,
-                          size = 100, burn = 50, ridge = FALSE, init = NULL)
-  
+  withr::with_seed(1, {
+    fm <- fit_bs_splines_v4(fixed = fix, data = fit_data, spline = spl,
+                            size = 100, burn = 50, ridge = FALSE, init = NULL)
+  })
+
   expect_equal(fit_data$truth, predict(fm), tolerance = 0.03)
   expect_true(all((fit_data$truth - predict(fm)) < mean(abs(fit_data$truth)) * 0.1))
 }

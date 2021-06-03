@@ -4,14 +4,15 @@ library(magrittr)
 
 ## Generate some dummy data
 rm(list = ls())
-set.seed(1)
-Bmat <- list(pop = matrix(sample(1:5, 500 * 4, TRUE), 500, 4),
-             sub = matrix(sample(1:5, 500 * 4, TRUE), 500, 4))
-Xmat <- matrix(sample(1:5, 500 * 4, TRUE), 500, 4)
 ## each subject name must be unique, no nesting! 2 population and 5 subjects, 2
 ## subs in pop 1, 3 subs in pop 2, 100 samples for each sub
 grp <- list(pop = c(rep(1, 200), rep(2, 300)),
             sub = rep(1:5, each = 100))
+
+set.seed(1)
+Bmat <- list(pop = matrix(sample(1:5, 500 * 4, TRUE), 500, 4),
+             sub = matrix(sample(1:5, 500 * 4, TRUE), 500, 4))
+Xmat <- matrix(sample(1:5, 500 * 4, TRUE), 500, 4)
 
 
 theta <- purrr::map(setNames(1:2, 1:2), ~rnorm(4)) # N(0, diag(4))
