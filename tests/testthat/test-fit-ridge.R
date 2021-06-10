@@ -9,7 +9,7 @@ test_that("Prediction varies from the truth (multi pop, no fixed effects)", {
               sub = ~s(x, by = sub, knots = 3, deg = 2, is_sub = TRUE))
   fix <- y ~ pop
   
-  withr::with_seed(1, {
+  withr::with_seed(10, {
     fm <- fit_bs_splines_v4(fixed = fix, data = fit_data, spline = spl,
                             size = 100, burn = 50, ridge = FALSE, init = NULL)
   })
@@ -24,22 +24,47 @@ test_that("Prediction varies from the truth (multi pop, no fixed effects)", {
 ## effects. 'simdata3' is an extension of 'simdata2' with two extra fixed
 ## effects.
 test_that("Prediction varies from the truth (multi pop, with fixed effects)", {
-  print(sum(environment()$.Random.seed))
   fit_data <- dplyr::mutate(get_simdata3(),
                             pop = factor(pop, levels = c('3', '2', '1')),
                             sub = as.factor(sub))
   
   spl <- list(pop = ~s(x, by = pop, knots = 3, deg = 2),
               sub = ~s(x, by = sub, knots = 3, deg = 2, is_sub = TRUE))
-  fix <- y ~ pop + effect1 + effect2
+  fix <- y ~ pop + fixed1 + fixed2
   
-  withr::with_seed(1, {
+  withr::with_seed(10, {
     fm <- fit_bs_splines_v4(fixed = fix, data = fit_data, spline = spl,
                             size = 100, burn = 50, ridge = FALSE, init = NULL)
   })
 
   expect_equal(fit_data$truth, predict(fm), tolerance = 0.03)
   expect_true(all((fit_data$truth - predict(fm)) < mean(abs(fit_data$truth)) * 0.1))
-}
+})
+
+
+## An example with multiple population, subject curves, fixed and random
+## effects. 'simdata4' is an extension of 'simdata2' with two extra fixed
+## effects.
+test_that("Prediction varies from the truth (multi pop, with fixed effects)", {
+  fit_data <- dplyr::mutate(get_simdata4(),
+                            pop = factor(pop, levels = c('3', '2', '1')),
+                            sub = as.factor(sub))
+  
+  spl <- list(pop = ~s(x, by = pop, knots = 3, deg = 2),
+              sub = ~s(x, by = sub, knots = 3, deg = 2, is_sub = TRUE))
+  fix <- y ~ pop + fixed1
+  
+  withr::with_seed(10, {
+    fm <- fit_bs_splines_v4(fixed = fix, data = fit_data,
+                            spline = spl, random = ~random1,
+                            size = 100, burn = 50, ridge = FALSE, init = NULL)
+  })
+  
+  expect_equal(fit_data$truth, predict(fm), tolerance = 0.04)
+  expect_true(all((fit_data$truth - predict(fm)) < mean(abs(fit_data$truth)) * 0.1))
+})
+
+
+
 
 

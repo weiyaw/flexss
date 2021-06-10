@@ -46,24 +46,53 @@ get_simdata3 <- function(seed = 1, coef = FALSE) {
   res <- get_simdata2(seed = seed, coef = coef)
   if (coef) {
     ## mean of level 1 is 1 unit larger
-    res$effect1 <- c(0, 1)
+    res$fixed1 <- c(0, 1)
     # mean of level 1 is 1 unit larger, level 2 is 2 units smaller
-    res$effect2 <- c(0, 1, -2)
+    res$fixed2 <- c(0, 1, -2)
   } else {
-    ## effect1: sub 1, 3, 5, 7, 9 has level 1, the rest level 0
-    res$effect1 <- as.factor(as.numeric(res$sub) %% 2)
+    ## fixed1: sub 1, 3, 5, 7, 9 has level 1, the rest level 0
+    res$fixed1 <- as.factor(as.numeric(res$sub) %% 2)
     ## mean of level 1 is 1 unit larger
-    res$y[res$effect1 == 1] <- res$y[res$effect1 == 1] + 1
-    res$truth[res$effect1 == 1] <- res$truth[res$effect1 == 1] + 1
+    res$y[res$fixed1 == 1] <- res$y[res$fixed1 == 1] + 1
+    res$truth[res$fixed1 == 1] <- res$truth[res$fixed1 == 1] + 1
 
-    ## effect2: sub 1, 4, 7, 10 has level 1, sub 2, 5, 8 has level 2, the rest level 0
-    res$effect2 <- as.factor(as.numeric(res$sub) %% 3)
+    ## fixed2: sub 1, 4, 7, 10 has level 1, sub 2, 5, 8 has level 2, the rest level 0
+    res$fixed2 <- as.factor(as.numeric(res$sub) %% 3)
     ## mean of level 1 is 1 unit larger
-    res$y[res$effect2 == 1] <- res$y[res$effect2 == 1] + 1 
-    res$truth[res$effect2 == 1] <- res$truth[res$effect2 == 1] + 1 
+    res$y[res$fixed2 == 1] <- res$y[res$fixed2 == 1] + 1 
+    res$truth[res$fixed2 == 1] <- res$truth[res$fixed2 == 1] + 1 
     ## mean of level 1 is 2 units smaller
-    res$y[res$effect2 == 2] <- res$y[res$effect2 == 2] - 2
-    res$truth[res$effect2 == 2] <- res$truth[res$effect2 == 2] - 2
+    res$y[res$fixed2 == 2] <- res$y[res$fixed2 == 2] - 2
+    res$truth[res$fixed2 == 2] <- res$truth[res$fixed2 == 2] - 2
+  }
+  res
+}
+
+
+get_simdata4 <- function(seed = 1, coef = FALSE) {
+  
+  ## same set up as simdata2, but with one extra fixed and ramdom effect
+  res <- get_simdata2(seed = seed, coef = coef)
+  withr::local_seed(seed = seed + 1)
+  ranef <- setNames(rnorm(50), as.character(1:50))
+  if (coef) {
+    ## mean of level 1 is 1 unit larger, level 2 is 2 units smaller
+    res$fixed1 <- c(0, 1, -2)
+    res$random1 <- ranef
+  } else {
+    ## fixed1: sub 1, 4, 7, 10 has level 1, sub 2, 5, 8 has level 2, the rest level 0
+    res$fixed1 <- as.factor(as.numeric(res$sub) %% 3)
+    ## mean of level 1 is 1 unit larger
+    res$y[res$fixed1 == 1] <- res$y[res$fixed1 == 1] + 1 
+    res$truth[res$fixed1 == 1] <- res$truth[res$fixed1 == 1] + 1 
+    ## mean of level 1 is 2 units smaller
+    res$y[res$fixed1 == 2] <- res$y[res$fixed1 == 2] - 2
+    res$truth[res$fixed1 == 2] <- res$truth[res$fixed1 == 2] - 2
+
+    ## random1: 50 levels, each replicated 4 times
+    res$random1 <- gl(50, 4, NROW(res))
+    res$y <- res$y + ranef[as.character(res$random1)]
+    res$truth <- res$truth + ranef[as.character(res$random1)]
   }
   res
 }
