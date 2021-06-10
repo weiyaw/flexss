@@ -33,7 +33,7 @@ detect_sub <- function(fo, envir = attr(fo, '.Environment')) {
 ## env: envioronment which the formula should be evaluated; default to the
 ## environment where the formula was defined. 'x' and 'by' are evaluated
 ## at the data.
-## return: list(model_mat, trans_mat, index, degree, type, knots)
+## return: list(quote of the formula, value from s)
 parse_spline <- function(fo, spl_name, data, envir = attr(fo, '.Environment')) {
   if (class(fo) == 'formula' && length(fo) == 2) {
     if (fo[[2]][[1]] == 's') {
@@ -138,16 +138,12 @@ s <- function(x, by = as.factor(1), knots = min(max(1, length(x)/4), 35), degree
     res$trans_mat <- get_transform_bs(knots + degree + 1, degree + 1)
     cmm <- dmatinfo$design %*% res$trans_mat # compact model matrix
 
-    ## check if sub index is continuous, bcoz assuming Bmat$sub is block diagonal
-    index <- split(1:length(by), by)
-    level <- names(index)
-    stopifnot(purrr::map_lgl(index,
-                             ~all(.x == seq.int(.x[1], len = length(.x)))))
-    res$model_mat <- purrr::map(index, ~cmm[.x, ])
+    ## produce a block diagonal matrix (i.e. list of model matrices for each subject)
+    res$model_mat <- purrr::map(split(1:NROW(cmm), by), ~cmm[.x, ])
+    level <- names(res$model_mat)
 
     attr(res$model_mat, 'block_dim') <- degree + 1
     message('block_dim of subject spline set to ', attr(res$model_mat, 'block_dim'), '.')
-    attr(res$model_mat, 'index') <- index
   } else {
 
     ## Remove the intercept of the spline to ensure model identifiability. The

@@ -49,8 +49,7 @@ test_that("Model matrix for subject-specific curves", {
                                                    block_dim = 3,
                                                    spl_dim = 5,
                                                    is_sub = TRUE,
-                                                   level = c('1', '2'),
-                                                   index = split(1:length(f), f))))
+                                                   level = c('1', '2'))))
 })
 
 

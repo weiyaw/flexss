@@ -262,9 +262,7 @@ initialise_prec_v4 <- function(Bmat, Xmat, y) {
 ## Bmat: list of matrix
 ## return: list of matrix
 calc_xBs_v4 <- function(Bmat_sub) {
-  ## index <- attr(Bmat_sub, 'index')
   purrr::map(Bmat_sub, Matrix::crossprod)
-  ## purrr::map(index, ~Matrix::crossprod(Bmat_sub[index, index]))
 }
 
 ## ## xBs: list of matrix
@@ -359,6 +357,8 @@ calc_Qmat_inv_v4 <- function(Xmat, PhixX, Sigma_inv, eps_inv) {
   }
 }
 
+## assume: when computing Phi2, Phi1 is a list but converted to a bdiag matrix
+## (i.e. Bmat_sub assumed to be block diagonal)
 ## Phi: matrix / list of matrix if Phi_2
 ## PhixB: matrix / list of matrix if Phi_1
 ## Qmat_inv: matrix / list of matrix if Phi_1
@@ -366,8 +366,7 @@ calc_Qmat_inv_v4 <- function(Xmat, PhixX, Sigma_inv, eps_inv) {
 calc_Phi_v4 <- function(Phi, PhixX, Qmat_inv) {
   if (is.null(Phi)) {
     ## calc base case Phi_1, PhixX and Qmat_inv are lists
-    stopifnot(is.list(PhixX), is.list(Qmat_inv),
-              names(PhixX) == names(Qmat_inv))
+    stopifnot(is.list(PhixX), is.list(Qmat_inv))
     calc_Phi0i <- function(PhixX, Qmat_inv) {
       res <- -1 * tquadprod(PhixX, Qmat_inv)
       res[row(res) == col(res)] <- Matrix::diag(res, names = FALSE) + 1
@@ -403,14 +402,18 @@ calc_presid_v4 <- function(presid, Xb) {
 
 ## calculate Rmat
 ## presid: col matrix
-## PhixX: matrix / list of matrix
-## index: a list of index to split presid
-## return: row matrix / list of row matrix (if index != NULL)
-calc_Rmat_v4 <- function(presid, PhixX, index = NULL) {
+## PhixX: matrix / list of matrix (i.e. bdiag mat)
+## return: row matrix / list of row matrix (if bdiag mat)
+calc_Rmat_v4 <- function(presid, PhixX) {
   if (is.list(PhixX)) {
-    stopifnot(!is.null(index), names(index) == names(PhixX))
-    ## split presid into a list of numeric vectors and crossprod
-    purrr::map2(index, PhixX, ~Matrix::crossprod(presid[.x, ], .y))
+    ## in this scenario, PhixX is just Bmat of subject terms
+    n <- vapply(PhixX, NROW, 1L)
+    stopifnot(sum(n) == length(presid), length(n) == length(PhixX))
+    by <- rep(seq_along(PhixX), times = n)
+    ## split presid into a list of numeric vectors
+    presid_ls <- split(as.numeric(presid), by)
+    ## calculate Rmat for each subject
+    purrr::map2(presid_ls, PhixX, Matrix::crossprod)
   } else {
     Matrix::crossprod(presid, PhixX)
   }
@@ -429,8 +432,7 @@ gen_coefs <- function(Qmat_inv, Rmat, eps_inv) {
     MASS::mvrnorm(1, mu, Sigma)
   }
   if (is.list(Qmat_inv) || is.list(Rmat)) {
-    stopifnot(is.list(Qmat_inv), is.list(Rmat),
-              names(Qmat_inv) == names(Rmat))
+    stopifnot(is.list(Qmat_inv), is.list(Rmat))
     purrr::map2(Qmat_inv, Rmat, gen_coefs_i)
   } else {
     gen_coefs_i(Qmat_inv, Rmat)
@@ -443,8 +445,7 @@ gen_coefs <- function(Qmat_inv, Rmat, eps_inv) {
 calc_Xb_v4 <- function(Xmat, beta) {
   stopifnot(!is.null(Xmat), !is.null(beta))
   if (is.list(Xmat) || is.list(beta)) {
-    stopifnot(is.list(Xmat), is.list(beta),
-              names(Xmat) == names(beta))
+    stopifnot(is.list(Xmat), is.list(beta))
     purrr::map2(Xmat, beta, ~as.numeric(.x %*% .y))
   } else {
     Xmat %*% beta
@@ -533,11 +534,20 @@ update_yhat_v4 <- function(f, g, Xb) {
 ## datals: list(Bmat_pop: matrix, Bmat_sub: list of matrix, Xmat: matrix, y: col matrix)
 ## y: col matrix
 ## Bmat: list of matrix. term for subject curves must be at the front.
-## Bmat attr: spl_dim (num), level (char), index (list of num), penalty (matrix, non-sub spline only),
-## block_dim (num, sub spline only)
 ## Xmat: list of matrix
 ## xBs: list of matrix (crossprod(Bmat$sub) for each i)
 ## kprec: list(spl: list of matrix, eff: list of matrix, eps: numeric)
+
+#' Update coefficients
+#'
+#' @param y An n by 1 column matrix of the responce
+#' @param Bmat A list of spline term design matrices. The term for subject
+#'   curves must be at the front. Required attributes of each matrix: spl_dim
+#'   (num), level (char), is_sub (bool), penalty (matrix, non-sub spline only),
+#'   block_dim (num, sub spline only)
+#' @param Xmat
+#' 
+#' @return precision matrix for the coefs
 update_coefs_v4 <- function(y, Bmat, Xmat, xBs, kprec, debug = FALSE) {
 
   ## term for subject curves must be at the front.
@@ -575,15 +585,10 @@ update_coefs_v4 <- function(y, Bmat, Xmat, xBs, kprec, debug = FALSE) {
   
   presid <- y
   Xb <- NULL
-  index <- NULL
   ## calculate Rmat
   for (ct in rev(allnames)) {
-    if (ct == allnames[1]) {
-      stopifnot(attr(allmat[[ct]], 'is_sub'))
-      index <- attr(allmat[[ct]], 'index')
-    }
     presid <- calc_presid_v4(presid, Xb)
-    Rmat[[ct]] <- calc_Rmat_v4(presid, PhixX[[ct]], index)
+    Rmat[[ct]] <- calc_Rmat_v4(presid, PhixX[[ct]])    
     coefs[[ct]] <- gen_coefs(Qmat_inv[[ct]], Rmat[[ct]], kprec$eps)
     Xb <- calc_Xb_v4(allmat[[ct]], coefs[[ct]])
   }
@@ -861,41 +866,35 @@ check_Bmat <- function(Bmat) {
       if (!all(purrr::map_dbl(x, NCOL) == attr(x, 'spl_dim'))) {
         stop('number of cols of ', x_name, ' mismatch with spl_dim and level.')
       } 
-      if (is.null(attr(x, 'index'))) {
-        stop('no index in the subject term.')
-      }
-      if (!is.list(attr(x, 'index'))) {
-        stop('index in the subject term must be a list.')
-      }
-      if (!identical(sort(names(attr(x, 'index'))), sort(attr(x, 'level')))) {
-        stop('names of the index and level in the subject term must match up.')
+      if (!identical(sort(names(x)), sort(attr(x, 'level')))) {
+        stop('names of the level in the subject term and list of matrices must match up.')
       }
 
       if (is.null(attr(x, 'block_dim'))) {
-        stop('Missing block_dim in the ', x_name, '.')
+        stop('missing block_dim in the ', x_name, '.')
       }
     } else {
       if (!(is.matrix(x) || methods::is(x, 'Matrix'))) {
         stop(x_name, ' must be a matrix.')
       }
       if (NCOL(x) != (attr(x, 'spl_dim') * length(attr(x, 'level')))) {
-        stop('Incompatible column dimension for ', x_name, '.')
+        stop('incompatible column dimension for ', x_name, '.')
       } 
       if (is.null(attr(x, 'penalty'))) {
-        stop('Penalty not specified in ', x_name, '.')
+        stop('penalty not specified in ', x_name, '.')
       } else {
         if (abs(Matrix::det(Matrix::tcrossprod(attr(x, 'penalty')))) < 1e-10) {
-          warning('The rows of Kmat may not be independent.')
+          warning('rows of Kmat may not be independent.')
         }
       }
     }
   }
 
   if (any(purrr::map_lgl(names(Bmat), is.null))) {
-    stop('All entries of Bmat must have a name.')
+    stop('all entries of Bmat must have a name.')
   }
   if (sum(purrr::map_lgl(Bmat, ~attr(.x, 'is_sub'))) != 1) {
-    stop('Must include one and only one term for subject-specific curves.')
+    stop('must include one and only one term for subject-specific curves.')
   }
   purrr::iwalk(Bmat, check_each_Bmat)
 }
@@ -946,9 +945,6 @@ check_Xmat <- function(Xmat) {
 #' should match the corresponding column entries in Bmat/list of Bmat. Use a
 #' dummy name if there is only one level.
 #'
-#' 'index' is a list of numeric vector specifying the position of rows for each
-#'   subject. Only applicable for subject curves.
-#'
 #' 'block_dim' is the dimension of the subject deviations where the precision
 #' should be considered as a block. See paper for more details.
 #' 
@@ -981,10 +977,11 @@ check_Xmat <- function(Xmat) {
 #' @param Bmat A named list of design matrices (or a list of design matrices for
 #'   each subject for the subject spline) for the splines terms with at least
 #'   the following attributes: 'spl_dim', 'is_sub', 'level'. For
-#'   subject-specific splines (i.e. is_sub = TRUE), it is a list of matrices and
-#'   should also have 'block_dim' and 'index'. For other splines, it is a matrix
-#'   and should have 'penalty'. At least an element of Bmat must be 'is_sub =
-#'   TRUE'. See details.
+#'   subject-specific splines (i.e. is_sub = TRUE), it is a block-diagonal
+#'   matrix and specified as a list of matrices corresponding to each diagonal
+#'   element. The list should also have a 'block_dim' attribute. For other
+#'   splines, it is a matrix and should have a 'penalty' attribute. At least an
+#'   element of Bmat must be 'is_sub = TRUE'. See details.
 #' @param Xmat A named list of design matrices for the non-spline terms,
 #'   e.g. fixed and random effects.
 #' @param prior unknown yet
@@ -1024,6 +1021,7 @@ bayes_ridge_semi_v4 <- function(y, Bmat, Xmat,
   Bmat <- Bmat[order(which_sub, decreasing = TRUE)]
   ## check if each element has a name
   stopifnot(length(setdiff(names(Bmat), '')) == length(Bmat))
+  names(Bmat[[1]]) <- NULL # get rid of any potential names in the subject spline
 
   if (is.null(prec)) {
     prec_ls <- NULL
