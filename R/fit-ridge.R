@@ -150,7 +150,10 @@ fit_bs_splines <- function(data, K, deg, size, burn, ridge = FALSE, init = NULL,
 #' @param spline A list of formulae of splines s(x, by =, ...). This routine
 #'   looks up the variable from the data, before looking at the environment
 #'   where the formula is defined. See [s()] for more details.
-#' @param random A formula ~ u1 + u2 ... specifying the random effect term.
+#' @param random A formula ~ u1 specifying the random effect term. Only one
+#'   random effect is allowed at the moment. In the future, this argument might
+#'   take a list of fomulae (so each formula corresponds to a random effect), or
+#'   implement something like nlme::lme or lme4::lmer.
 #' @param size The number of samples to be drawn from the posterior.
 #' @param burn The number of samples to burn before recording. Default to
 #'   one-tenth of \code{size}.
@@ -223,7 +226,7 @@ fit_bs_splines_v4 <- function(fixed, data, spline, random = NULL,
   ## remove model_mat and return
   fm$spline <- purrr::map(spline_obj, ~`[<-`(.x, 'model_mat', NULL))
   fm$effect <- purrr::map(effect_obj, ~`[<-`(.x, 'model_mat', NULL))
-  class(fm) <- 'fsso'
+  class(fm) <- 'blm' # bayesian longitudinal model (black lives matter)
   fm
 }
 
@@ -283,7 +286,8 @@ predict_grp <- function(model_mat, by, coef) {
 ## efficient prediction calculation of factor variables in bulk
 ## model_mat: the model matrix to be multiplied
 ## by: a vector specifying the group which each row of model matrix corresponds to
-## coef: a 2D or 3D array of spline coef. The last dim are samples of coefs. If 3D, colnames must have unique(by). 
+## coef: a 2D or 3D array of spline coef. The last dim are samples of coefs. If 3D, colnames must have unique(by).
+## value: a 2D matrix, nrow = nrow of model_mat, ncol = number of samples
 predict_grp2 <- function(model_mat, by, coefs) {
   
   if (is.null(by)) {
@@ -308,7 +312,7 @@ predict_grp2 <- function(model_mat, by, coefs) {
 #' Return prediction with the posterior mean (or other statistics) of the
 #' regression coefficients.
 #' 
-#' @param object an 'fsso' object.
+#' @param object an 'blm' object.
 #' @param newdata a data frame with all the covariate required for prediction.
 #' @param level a string specify the name of the spline. Only the component
 #'   correponding to that spline is returned together with the effect terms).
@@ -316,7 +320,7 @@ predict_grp2 <- function(model_mat, by, coefs) {
 #'   the regression coefs. By default, it's `mean`.
 #' 
 #' @export
-predict.fsso <- function(object, newdata = NULL, level = NULL, fun = NULL) {
+predict.blm <- function(object, newdata = NULL, level = NULL, fun = NULL) {
   ## temporary measure. change the output samples in the future
   ## names(object$means$coef) <- c('pop', 'sub', 'fixed')
     

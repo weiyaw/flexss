@@ -26,11 +26,14 @@ at the environment where the formula is defined.}
 \code{sub}). If a \code{pop} column is also given, separate mean curves are
 fitted to each population.}
 
-\item{spline}{A list of formulae of splines s(x, by =, K = , deg = ,
-...). This routine looks up the variable from the data, before looking
-at the environment where the formula is defined. See `s` for more details.}
+\item{spline}{A list of formulae of splines s(x, by =, ...). This routine
+looks up the variable from the data, before looking at the environment
+where the formula is defined. See [s()] for more details.}
 
-\item{random}{A formula ~ u1 + u2 ... specifying the random effect term.}
+\item{random}{A formula ~ u1 specifying the random effect term. Only one
+random effect is allowed at the moment. In the future, this argument might
+take a list of fomulae (so each formula corresponds to a random effect), or
+implement something like nlme::lme or lme4::lmer.}
 
 \item{size}{The number of samples to be drawn from the posterior.}
 
@@ -68,4 +71,7 @@ in an unidentifiable model.
 
  Therefore, the intercept should be added manually either by setting
 'intercept = TRUE' or adding it as fixed effects.
+}
+\seealso{
+[s()] for spline specification.
 }
