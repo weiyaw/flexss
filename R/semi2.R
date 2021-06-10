@@ -19,22 +19,12 @@ tquadprod <- function(x, A) {
   Matrix::forceSymmetric(res)
 }
 
+## is this a precision matrix (in the context of this model)? The precision can
+## be semi-positive definite.
+is_precision <- function(x) {
+  all(isSymmetric(x), eigen(x, TRUE)$values >= 0)
+}
 
-## ## the rows of Kmat must be independent
-## check_Kmat <- function(Kmat) {
-##   if (abs(Matrix::det(Matrix::tcrossprod(Kmat))) < 1e-10) {
-##     warning('The rows of Kmat may not be independent.')
-##   }
-## }
-
-## check_prec_beta <- function(prec_beta, dim_beta) {
-##   if (!is.null(prec_beta)) {
-##     message('prec$beta specified.')
-##     stopifnot(is.matrix(prec_beta),
-##               dim(prec_beta) == dim_beta,
-##               is_precision(prec_beta))
-##   }
-## }
 check_prec_v4 <- function(prec, para) {
   ## display specified precision
   if (!is.null(prec$theta)) {
@@ -567,12 +557,7 @@ update_coefs_v4 <- function(y, Bmat, Xmat, xBs, kprec, debug = FALSE) {
   PhixX <- purrr::map(allmat, ~NULL)
   Rmat <- purrr::map(allmat, ~NULL)
   coefs <- purrr::map(allmat, ~NULL)
-
-  ## base case (i.e. subject curves):
-  ## PhixX0 (PhixX[[1]]) <- Bmat[[1]]
-  ## Qmat0 (Qmat[[1]]) <- map(xBs, ~.x + prec)
-  ## Phi1 <- map(Bmat[[1]], Qmat_inv[[1]], ~I - tquadprod(.x, .y))
-
+  
   ## subject-specific terms
   PhixX[[1]] <- Bmat[[1]]
   sigma_sub_ratio <- sign(allprec[[1]]) * exp(log(abs(allprec[[1]])) - log(kprec$eps))
@@ -613,7 +598,7 @@ update_coefs_v4 <- function(y, Bmat, Xmat, xBs, kprec, debug = FALSE) {
   ## convert spl coefs to matrices
   for (l in names(res$spl)) {
     if (attr(Bmat[[l]], 'is_sub')) {
-      # when splines are subject curves
+      # subject splines
       res$spl[[l]] <- structure(do.call(cbind, res$spl[[l]]),
                                 is_sub = TRUE,
                                 block_dim = attr(Bmat[[l]], 'block_dim'))
@@ -650,33 +635,16 @@ get_prec_container_v4 <- function(para, size) {
 }
 
 
-## get_dims <- function(Bmat, Xmat) {
-##   list(theta = NCOL(Bmat$pop),
-##        delta = NCOL(Bmat$sub),
-##        beta = NCOL(Xmat))
-## }
-
+#' Get dims and names of the spline and effect terms.
+#'
+#' @param Bmat,Xmat Design matrices of the spline and effect terms.
+#' 
+#' @return A list of dims and levels
 get_para_v4 <- function(Bmat, Xmat) {
-  para <- list(spl_dims = purrr::map(Bmat, ~attr(.x, 'spl_dim')),
-               eff_dims = purrr::map(Xmat, NCOL),
-               spl_level = purrr::map(Bmat, ~attr(.x, 'level')),
-               eff_level = purrr::map(Xmat, colnames))
-  
-  ## if (is.null(Xmat)) {
-  ##   ## for ranef to be NULL if no random/fixed effects
-  ##   para[c('dim_beta', 'ranef', 'beta_names')] <- NULL
-  ## } else {
-  ##   if (!is.null(prec_beta)) {
-  ##     message("ranef overriden by prec$beta") 
-  ##     para$ranef <- which(diag(prec_beta) > 0)
-  ##   }
-  ##   if (is.null(colnames(Xmat))) {
-  ##     para$beta_names <- paste0('beta', seq_len(NCOL(Xmat)))
-  ##   } else {
-  ##     para$beta_names <- colnames(Xmat)
-  ##   }
-  ## }
-  para
+  list(spl_dims = purrr::map(Bmat, ~attr(.x, 'spl_dim')),
+       eff_dims = purrr::map(Xmat, NCOL),
+       spl_level = purrr::map(Bmat, ~attr(.x, 'level')),
+       eff_level = purrr::map(Xmat, colnames))
 }
 
 ## x: a vector or matrix, to be squared and sum
@@ -697,11 +665,15 @@ update_with_wishart <- function(x, v, lambda) {
   stats::rWishart(1, df = df, Sigma = inv_scale)[, , 1]
 }
 
-## coefs: matrix, each column the coef of (a subject|a level in a factor)
-## attr(coefs, 'penalty'): a full-row rank penalty matrix (for ordinary
-## splines). Kmat %*% coefs are penalised (i.e. are random)
-## attr(coefs, 'block_dim'): the dimension corresponding to the block cov matrix (for subject splines)
-## return precision matrix for the coefs
+#' Update precision of the spline terms
+#'
+#' @param coefs Matrix, each column the coef of (a subject|a level in a
+#'   factor). `attr(coefs, 'penalty')`: a full-row rank penalty matrix (for
+#'   ordinary splines). Kmat %*% coefs are penalised (i.e. are
+#'   random). `attr(coefs, 'block_dim')`: the dimension corresponding to the
+#'   block cov matrix (for subject splines)
+#' 
+#' @return precision matrix for the coefs
 update_prec_spline <- function(coefs, prior) {
   if (is.null(prior)) {
     NULL
@@ -755,17 +727,13 @@ update_prec_effect <- function(coefs, prior) {
   } else {
     prec <- update_with_gamma(coefs, prior$a, prior$b)
     diag(prec, NROW(coefs))
-    ## rep(0, times = NROW(coefs)) %>%
-    ##   `[<-`(ranef, prec) %>%
-    ##   diag()
   }
 }
 
 update_precs_v4 <- function(kcoef, y, prior_ls, init_prec = NULL) {
   if (is.null(init_prec)) {
     stopifnot(names(kcoef$spl) == names(prior_ls$spl),
-              names(kcoef$eff) == names(prior_ls$eff))
-
+              names(kcoef$eff) == names(prior_ls$eff))    
     list(spl = purrr::map2(kcoef$spl, prior_ls$spl, update_prec_spline),
          eff = purrr::map2(kcoef$eff, prior_ls$eff, update_prec_effect),
          eps = update_prec_eps(kcoef$yhat, y, prior_ls$eps))
@@ -902,27 +870,32 @@ check_Bmat <- function(Bmat) {
       if (!identical(sort(names(attr(x, 'index'))), sort(attr(x, 'level')))) {
         stop('names of the index and level in the subject term must match up.')
       }
+
       if (is.null(attr(x, 'block_dim'))) {
-        stop('no block_dim in the subject term.')
+        stop('Missing block_dim in the ', x_name, '.')
       }
     } else {
       if (!(is.matrix(x) || methods::is(x, 'Matrix'))) {
         stop(x_name, ' must be a matrix.')
       }
       if (NCOL(x) != (attr(x, 'spl_dim') * length(attr(x, 'level')))) {
-        stop('number of cols of ', x_name, ' mismatch with spl_dim and level.')
+        stop('Incompatible column dimension for ', x_name, '.')
       } 
       if (is.null(attr(x, 'penalty'))) {
-        stop('penalty not specified in ', x_name, '.')
+        stop('Penalty not specified in ', x_name, '.')
+      } else {
+        if (abs(Matrix::det(Matrix::tcrossprod(attr(x, 'penalty')))) < 1e-10) {
+          warning('The rows of Kmat may not be independent.')
+        }
       }
     }
   }
 
   if (any(purrr::map_lgl(names(Bmat), is.null))) {
-    stop('all entries of Bmat must have a name.')
+    stop('All entries of Bmat must have a name.')
   }
   if (sum(purrr::map_lgl(Bmat, ~attr(.x, 'is_sub'))) != 1) {
-    stop('must include one and only one term for subject-specific curves.')
+    stop('Must include one and only one term for subject-specific curves.')
   }
   purrr::iwalk(Bmat, check_each_Bmat)
 }
@@ -946,7 +919,7 @@ check_Xmat <- function(Xmat) {
 
 #' Bayesian ridge for longitudinal semiparemetric models
 #'
-#' This is a Gibbs sampler v3 for fitting Bayesian longitudinal semiparametric
+#' This is a Gibbs sampler v4 for fitting Bayesian longitudinal semiparametric
 #' models. It assumes that there are multiple populations in the model and each
 #' population is modelled by a population 'mean' curve. Within each population,
 #' they are multiple subjects, and each subject are modelled by a 'subject'
@@ -956,14 +929,18 @@ check_Xmat <- function(Xmat) {
 #' to some of the populations or subjects, and the user is interested in the
 #' effect of the treatment.
 #'
+#' THIS FUNCTION IS FOR INTERNAL USE ONLY AND NEVER MEANT TO BE EXPORTED.
+#' 
 #' The mean and subject curves are modelled as linear (in statistical sence, not
 #' only stright lines). This includes polynomials and splines. The attributes of
 #' their design matrices (i.e. Bmat) are
 #'
-#' 'spl_dim' is the dimension of the spline coefficients.
+#' 'spl_dim' is the dimension of the splines. This is actually redundant (can be
+#' inferred from 'level' and the dims of Bmat), but is still included for
+#' verification and for easy query of the spline dimension.
 #' 
 #' 'is_sub' is a boolean that specifies whether the spline term is a
-#' subject-specific deviations.
+#' subject-specific deviations. One of the spline must be a subject spline.
 #'
 #' 'level' is the name of each population or subject. The order of the names
 #' should match the corresponding column entries in Bmat/list of Bmat. Use a
@@ -1025,27 +1002,23 @@ check_Xmat <- function(Xmat) {
 #' 
 #' @return A list of length two, posterior samples and means are stored in
 #'   'samples' and 'means' elements respectively. Within each elements, 'coef'
-#'   are the regression coefficients and 'prec' the precisions (i.e. the inverse
-#'   of variances).
-#' 
-#'  The coef samples are organised as a list of arrays for splines and a list of
-#'  matrices for effects. (rewrite the precision part, except coef$beta (matrix)
-#'  and prec$eps (vector)). The samples are always populated along the last
-#'  dimension of the array, matrix or vector. For the 'coef' samples, the first
-#'  dimension of the array/matrix is always the dimension of the coefficients,
-#'  followed by the indices of populations/subjects (for 'theta' and 'delta'
-#'  only). All the precisions except 'eps' are symmetrical square matrices.
+#'   are the regression coefficients and 'prec' the precisions. The coef samples
+#'   are organised as a list of arrays (dim_spl * length(level) * size) and a
+#'   list of matrices (ncol(Xmat) * size) for effects. The prec samples are
+#'   arrays for splines and effects terms, and vector for epsilon. The samples
+#'   are always populated along the last dimension of the array/matrix/vector.
 #'
 bayes_ridge_semi_v4 <- function(y, Bmat, Xmat,
                                 prior = NULL, prec = NULL, init = NULL,
                                 burn = 0, size = 1000, debug = TRUE) {
 
-  ## assumptions on y, Bmat, Xmat and grp
-  ## grp$sub are 'sticked' together, i.e. rows belonging to the same subjects are sticked together.
+  ## assumptions on y, Bmat, Xmat and grp. grp$sub are 'sticked' together,
+  ## i.e. rows belonging to the same subjects are sticked together.
 
   check_Bmat(Bmat)
   check_Xmat(Xmat)
   which_sub <- purrr::map_lgl(Bmat, ~attr(.x, 'is_sub'))
+  ## check_prec_v4(prec, Bmat, Xmat)
 
   ## put subject curves at the front
   Bmat <- Bmat[order(which_sub, decreasing = TRUE)]
@@ -1055,22 +1028,26 @@ bayes_ridge_semi_v4 <- function(y, Bmat, Xmat,
   if (is.null(prec)) {
     prec_ls <- NULL
     stopifnot(!is.null(prior))
-    prior_ls <- list(spl = prior$spl[order(which_sub, decreasing = TRUE)],
-                     eff = prior$eff,
+    stopifnot(c('spl', 'eff', 'eps') %in% names(prior),
+              names(Bmat) %in% names(prior$spl),
+              names(Xmat) %in% names(prior$eff))
+    prior_ls <- list(spl = prior$spl[names(Bmat)],
+                     eff = prior$eff[names(Xmat)],
                      eps = prior$eps)
     prior <- prec <- NULL
   } else {
     message('Emperical Bayes. Prior ignored.')
     prior_ls <- NULL
-    prec_ls <- list(spl = prec$spl[order(which_sub, decreasing = TRUE)],
-                    eff = prec$eff,
+    stopifnot(c('spl', 'eff', 'eps') %in% names(prec),
+              names(Bmat) %in% names(prec$spl),
+              names(Xmat) %in% names(prec$eff))
+    prec_ls <- list(spl = prec$spl[names(Bmat)],
+                    eff = prec$eff[names(Xmat)],
                     eps = prec$eps)
     prior <- prec <- NULL
   }
 
-  ## check_Kmat(Kmat)
   para <- get_para_v4(Bmat, Xmat)
-  ## check_prec(prec, para)
   
   ## para: n_subs, subs_in_pop, pop_of_subs
   coef_samples <- get_coef_container_v4(para, size)

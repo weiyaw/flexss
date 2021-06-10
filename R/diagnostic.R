@@ -10,18 +10,15 @@
 #' Convert the samples in a flexss object into a n_samples * n_parameters
 #' matrix.
 #'
-#' @param ... a flexss object.
+#' @param ... A flexss object.
 #'
-#' @return a matrix of samples.
+#' @return A matrix of samples.
 flatten_chain <- function(fm) {
   size <- length(fm$samples$prec$eps)
   ## order: coef_spline, coef_effect, prec_spline (lower triangle),
   ## prec_effect (lower triangle), sig2_eps, lp__
   para <- para_names(fm)
   flat <- matrix(NA, size, length(para), dimnames = list(NULL, para))
-  
-
-  ## xl <- purrr::map(fm2, ~`dim<-`(.x, c(dim(.x)[1] * dim(.x)[2], dim(.x)[3])))
   
   for (spl_name in names(fm$samples$coef$spline)) {
     spl <- fm$samples$coef$spline[[spl_name]]
@@ -91,9 +88,9 @@ flatten_chain <- function(fm) {
 #' Convert the samples in multiple flexss objects into a n_samples * n_objects *
 #' n_parameters 3D-array.
 #'
-#' @param ... a list of flexss objects, or flexss objects themselves
+#' @param ... A list of flexss objects, or flexss objects themselves
 #'
-#' @return a 3D array of samples.
+#' @return A 3D array of samples.
 #' 
 #' @export
 flatten_chains <- function(...) {

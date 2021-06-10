@@ -1,15 +1,17 @@
+tcrossprod <- Matrix::tcrossprod
+crossprod <- Matrix::crossprod
+
 ## inverse of a symmetrical, positive definite matrix
 pdinv <- function(x) {
   stopifnot(Matrix::isSymmetric(x))
-  x <- Matrix::forceSymmetric(x)
   ## use 'dpoMatrix' only if we can guarantee x is pd
-  ## xpd <- as(Matrix::forceSymmetric(x), 'dpoMatrix')
+  ## xpd <- as(Matrix::forceSymmetric(x), 'dpoMatrix')  
   Matrix::solve(x)
 }
 
 ## product of the quadratic, x %*% A %*% t(x)
 tquadprod <- function(x, A) {
-  res <- Matrix::tcrossprod(x %*% A, x)
+  res <- tcrossprod(x %*% A, x)
   Matrix::forceSymmetric(res)
 }
 
@@ -96,7 +98,7 @@ init_delta <- function(delta, sub_names, dim_delta, n_subs) {
 
   ## use Gaussian rv if initial values not supplied
   if (is.null(delta)) {
-    gauss_rv <- rnorm(dim_delta * n_subs) * 0.01
+    gauss_rv <- stats::rnorm(dim_delta * n_subs) * 0.01
     delta <- matrix(gauss_rv, dim_delta, n_subs)
   } else {
     message("Initial delta supplied.")
@@ -121,7 +123,7 @@ init_beta <- function(beta, beta_names, dim_beta) {
   if (is.null(dim_beta)) {
     return(NULL)
   } else if (is.null(beta)) {
-    beta <- rnorm(dim_beta) * 0.01
+    beta <- stats::rnorm(dim_beta) * 0.01
   } else {
     message("Initial beta supplied.")
     if (!any(is.vector(beta, mode = 'numeric'),
@@ -165,10 +167,10 @@ initialise_with_pls_v3 <- function(init, para, pls, datals, debug = FALSE) {
   ## delta_names <- names(para$pop_of_subs)
 
   ## theta <- init_theta(init$theta, theta_names, para$dim_theta, para$n_pops, pls)
-  theta <- as.matrix(rnorm(para$dim_theta)) # just for prototyping
+  theta <- as.matrix(stats::rnorm(para$dim_theta)) # just for prototyping
 
   ## delta <- init_delta(init$delta, delta_names, para$dim_delta, para$n_subs)
-  delta <- matrix(rnorm(para$dim_delta * para$n_subs),
+  delta <- matrix(stats::rnorm(para$dim_delta * para$n_subs),
                   para$dim_delta, para$n_subs,
                   dimnames = list(NULL, names(datals$Bmat_sub))) # just for prototyping
 
@@ -176,7 +178,7 @@ initialise_with_pls_v3 <- function(init, para, pls, datals, debug = FALSE) {
   beta <- if(is.null(para$dim_beta)) {
     NULL # just for prototyping
   } else {
-    as.matrix(rnorm(para$dim_beta)) # just for prototyping
+    as.matrix(stats::rnorm(para$dim_beta)) # just for prototyping
   }
 
   yhat <- init_yhat(datals, theta, delta, beta, debug)
@@ -268,7 +270,7 @@ calc_Qmat_inv <- function(Xmat, PsyxX, kprec) {
   if (is.null(Xmat) || is.null(PsyxX)) {
     NULL
   } else {
-    Qmat <- Matrix::crossprod(Xmat, PsyxX) + kprec$beta / kprec$eps
+    Qmat <- crossprod(Xmat, PsyxX) + kprec$beta / kprec$eps    
     pdinv(Qmat)
   }
 }
@@ -280,7 +282,7 @@ calc_Rmat <- function(y, PsyxX) {
   if (is.null(PsyxX)) {
     NULL
   } else {
-    Matrix::crossprod(y, PsyxX)
+    crossprod(y, PsyxX)
   }
 }
 
@@ -292,7 +294,7 @@ update_beta <- function(Qmat_inv, Rmat, kprec) {
   if (is.null(Qmat_inv) || is.null(Rmat)) {
     NULL
   } else {
-    mu_beta <- as.vector(Matrix::tcrossprod(Qmat_inv, Rmat))
+    mu_beta <- as.vector(tcrossprod(Qmat_inv, Rmat))
     Sig_beta <- as.matrix(Qmat_inv / kprec$eps)
     t(mvtnorm::rmvnorm(1, mu_beta, Sig_beta))
   }
@@ -315,9 +317,9 @@ calc_Xb <- function(Xmat, beta) {
 ## return: row matrix
 calc_Pmat <- function(y, Xb, PhixB) {
   if (is.null(Xb)) {
-    Matrix::crossprod(y, PhixB)
+    crossprod(y, PhixB)
   } else {
-    Matrix::crossprod(y - Xb, PhixB)
+    crossprod(y - Xb, PhixB)
   }
 }
 
@@ -326,7 +328,7 @@ calc_Pmat <- function(y, Xb, PhixB) {
 ## kprec: list(eps: numeric)
 ## return: a list of length n_pop
 update_theta <- function(Nmat_inv, Pmat, kprec) {
-  mu_theta <- as.vector(Matrix::tcrossprod(Nmat_inv, Pmat))
+  mu_theta <- as.vector(tcrossprod(Nmat_inv, Pmat))
   Sig_theta <- as.matrix(Nmat_inv / kprec$eps)
   t(mvtnorm::rmvnorm(1, mu_theta, Sig_theta))
 }
@@ -351,7 +353,7 @@ calc_Mmat <- function(y, f, Xb, Bmat_sub, grp_sub) {
     resids <- split(y - f - Xb, grp_sub)
   }
   stopifnot(names(resids) == names(Bmat_sub))
-  purrr::map2(resids, Bmat_sub, Matrix::crossprod)
+  purrr::map2(resids, Bmat_sub, crossprod)
 }
 
 ## Lmat_inv: list of matrix
@@ -360,7 +362,7 @@ calc_Mmat <- function(y, f, Xb, Bmat_sub, grp_sub) {
 ## return: list of col matrix
 update_delta <- function(Lmat_inv, Mmat, kprec) {
   update_delta_i <- function(Lmat_inv_i, Mmat_i) {
-    mu_delta <- as.vector(Matrix::tcrossprod(Lmat_inv_i, Mmat_i))
+    mu_delta <- as.vector(tcrossprod(Lmat_inv_i, Mmat_i))
     Sig_delta <- as.matrix(Lmat_inv_i / kprec$eps)
     t(mvtnorm::rmvnorm(1, mu_delta, Sig_delta))
   }
@@ -439,8 +441,7 @@ update_coefs <- function(datals, xBs, para, kprec, debug = FALSE) {
 get_coef_container <- function(para, size) {
   ## theta_array <- array(NA, c(para$dim_theta, para$n_pops, size),
   ##                      dimnames = list(NULL, names(para$subs_in_pop)))
-  theta_array <- matrix(NA, para$dim_theta, size,
-                        dimnames = list(para$theta_names)) # just for prototyping
+  theta_array <- matrix(NA, para$dim_theta, size) # just for prototyping
   delta_array <- array(NA, c(para$dim_delta, para$n_subs, size),
                        dimnames = list(NULL, unique(para$grp_sub)))
   if (is.null(para$dim_beta)) {
@@ -484,7 +485,6 @@ get_para <- function(grp, Bmat, Xmat, Kmat, dim_block, ranef, prec_beta) {
                dim_theta = NCOL(Bmat$pop),
                dim_delta = NCOL(Bmat$sub),
                dim_beta = NCOL(Xmat),
-               theta_names = colnames(Bmat$pop),
                Kmat = Kmat,
                dim_block = dim_block,
                ranef = ranef)
@@ -525,7 +525,7 @@ update_with_gamma <- function(x, a, b) {
 update_with_wishart <- function(x, v, lambda) {
   stopifnot(!is.null(x), !is.null(v), !is.null(lambda))
   df <- v + NCOL(x)
-  scale <- lambda + Matrix::tcrossprod(x)
+  scale <- lambda + tcrossprod(x)
   inv_scale <- as.matrix(pdinv(scale))
   rWishart(1, df = df, Sigma = inv_scale)[, , 1]
 }
@@ -779,7 +779,7 @@ bayes_ridge_semi <- function(y, grp, Bmat, Xmat = NULL,
       coef_samples$theta[, k] <- kcoef$theta
       coef_samples$delta[, colnames(kcoef$delta), k] <- kcoef$delta
       coef_samples$beta[, k] <- kcoef$beta
-
+      
       prec_samples$theta[, , k] <- as.matrix(kprec$theta)
       prec_samples$delta[, , k] <- as.matrix(kprec$delta)
       prec_samples$beta[, , k] <- kprec$beta
