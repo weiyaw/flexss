@@ -387,6 +387,178 @@ update_yhat <- function(f, g, Xb) {
   }
 }
 
+## calc_xX <- function(Xmat) {
+##   if (is.null(Xmat)) {
+##     NULL
+##   } else {
+##     purrr::map(Xmat, crossprod)
+##   }
+## }
+
+## ## return: list of length n_sub
+## calc_Lmat <- function(xX, kprec, n_subs) {
+##   if (is.null(xX)) {
+##     NULL
+##   } else if (all(kprec$beta == 0)) {
+##     xX
+##   } else {
+##     purrr::map(xX, ~.x + kprec$beta / (n_subs * kprec$eps))
+##   }
+## }
+
+## ## return: list of length n_sub
+## calc_Mmat <- function(y, f, g, Xmat) {
+##   if (is.null(Xmat)) {
+##     NULL
+##   } else {
+##     purrr::pmap(list(y, f, g, Xmat), ~crossprod(..1 - ..2 - ..3, ..4))
+##   }
+## }
+
+## ## return: list of length n_sub
+## ## if Xmat is NULL (i.e. no beta term), y must be provided
+## calc_Phi <- function(Xmat, Lmat, y = NULL) {
+##   if (is.null(Xmat)) {
+##     stopifnot(!is.null(y))
+##     purrr::map(y, ~diag(length(.x)))
+##   } else {
+##     calc_Phi_i <- function(Xmat_i, Lmat_i) {
+##       dim_Phi <- NROW(Xmat_i)
+##       Lmat_i_inv <- chol2inv(chol(Lmat_i)) # L_i > 0
+##       diag(dim_Phi) - tcrossprod(Xmat_i %*% Lmat_i_inv, Xmat_i)
+##     }
+##     purrr::map2(Xmat, Lmat, calc_Phi_i)
+##   }
+## }
+
+## ## return: list of length n_sub
+## calc_PhixBs <- function(Phi, Bmat_sub) {
+##   purrr::map2(Phi, Bmat_sub, `%*%`) # Phi_i is symmetrical
+## }
+
+## ## return: list of length n_sub
+## calc_Nmat_inv <- function(Bmat_sub, PhixBs, kprec) {
+##   calc_Nmat_i_inv <- function(Bmat_sub_i, PhixBs_i) {
+##     Nmat_i <- crossprod(Bmat_sub_i, PhixBs_i) + kprec$delta / kprec$eps
+##     chol2inv(chol(Nmat_i)) # N_i > 0
+##   }
+##   purrr::map2(Bmat_sub, PhixBs, calc_Nmat_i_inv)
+## }
+
+## ## return: list of length n_sub
+## calc_Pmat <- function(y, f, PhixBs) {
+##   purrr::pmap(list(y, f, PhixBs), ~crossprod(..1 - ..2, ..3))
+## }
+
+## ## return: list of length n_sub
+## calc_Psy <- function(Phi, PhixBs, Nmat_inv) {
+##   calc_Psy_i <- function(Phi_i, PhixBs_i, Nmat_i_inv) {
+##     Phi_i - tcrossprod(PhixBs_i %*% Nmat_i_inv, PhixBs_i) # Phi_i == t(Phi_i)
+##   }
+##   purrr::pmap(list(Phi, PhixBs, Nmat_inv), calc_Psy_i)
+## }
+
+## ## done
+## ## return: list of length n_sub
+## calc_PsyxB <- function(Psy, Bmat_pop) {
+##   purrr::map2(Psy, Bmat_pop, `%*%`) # Psy_i is symmetrical
+## }
+
+
+## ## Bmat_pop, Psy : named list of length = n_sub
+## ## subs_in_pop: named list of length = n_pop, each element a vector of sub names
+## ## of that particular pop
+## ## return: list of length n_pop
+## calc_Qmat_inv <- function(Bmat_pop, PsyxB, subs_in_pop, kprec) {
+##   ## require: magrittr
+##   calc_Qmat_l_inv <- function(subs_l) {
+##     subs_l <- as.character(subs_l)
+##     Bmat_pop_l <- Bmat_pop[subs_l]
+##     PsyxB_l <- PsyxB[subs_l]
+##     Qmat_l <- purrr::map2(Bmat_pop_l, PsyxB_l, crossprod) %>%
+##       purrr::reduce(`+`, .init = kprec$theta / kprec$eps) # this step gives Q_l
+##     chol2inv(chol(Qmat_l))                             # Q_l > 0
+##   }
+##   purrr::map(subs_in_pop, calc_Qmat_l_inv)
+## }
+
+## ## return: list of length n_pop
+## calc_Rmat <- function(y, PsyxB, subs_in_pop) {
+##   calc_Rmat_l <- function(subs_l) {
+##     subs_l <- as.character(subs_l)
+##     y_l <- y[subs_l]
+##     PsyxB_l <- PsyxB[subs_l]
+##     purrr::map2(y_l, PsyxB_l, crossprod) %>%
+##       purrr::reduce(`+`)
+##   }
+##   purrr::map(subs_in_pop, calc_Rmat_l)
+## }
+
+## ## pop_of_subs: named vector/list of length = n_sub of the pop of every sub
+## ## return: list of length n_sub
+## calc_f <- function(Bmat_pop, theta, pop_of_subs, debug = FALSE) {
+##   if (debug) stopifnot(names(Bmat_pop) == names(pop_of_subs))
+##   purrr::map2(Bmat_pop, pop_of_subs, ~.x %*% theta[[.y]])
+## }
+
+## ## return: list of length n_sub
+## calc_g <- function(Bmat_sub, delta, debug = FALSE) {
+##   if (debug) stopifnot(names(Bmat_sub) == names(delta))
+##   purrr::map2(Bmat_sub, delta, `%*%`)
+## }
+
+## ## return: a list of length n_pop
+## update_theta <- function(Bmat_pop, PsyxB, y, subs_in_pop, kprec) {
+##   Qmat_inv <- calc_Qmat_inv(Bmat_pop, PsyxB, subs_in_pop, kprec)
+##   Rmat <- calc_Rmat(y, PsyxB, subs_in_pop) 
+##   mu_theta <- purrr::map2(Qmat_inv, Rmat, tcrossprod)
+##   purrr::map2(mu_theta, Qmat_inv, ~t(mvtnorm::rmvnorm(1, .x, .y / kprec$eps)))
+## }
+
+## ## return: a list of length n_sub
+## update_delta <- function(Nmat_inv, PhixBs, y, f, kprec) {
+##   Pmat <- calc_Pmat(y, f, PhixBs)                # y, f
+##   mu_delta <- purrr::map2(Nmat_inv, Pmat, tcrossprod)
+##   purrr::map2(mu_delta, Nmat_inv, ~t(mvtnorm::rmvnorm(1, .x, .y / kprec$eps)))
+## }
+
+## ## return: a column vector
+## update_beta <- function(Lmat, Mmat, y, f, g, kprec) {
+##   if (is.null(Lmat) || is.null(Mmat)) {
+##     NULL
+##   } else {
+##     Lmat_sum <- purrr::reduce(Lmat, `+`)
+##     Lmat_sum_inv <- chol2inv(chol(Lmat_sum))
+##     Mmat_sum <- purrr::reduce(Mmat, `+`)
+##     mu_beta <- tcrossprod(Lmat_sum_inv, Mmat_sum)
+##     Sig_beta <- Lmat_sum_inv / kprec$eps
+##     t(mvtnorm::rmvnorm(1, mu_beta, Sig_beta))
+##   }
+## }
+
+## ## beta: a vector / column vector of length = NCOL(Xmat)
+## ## the rest of args: list of column vectors/matrix, length = n_subs
+## ## return a column vector (not numeric vector)
+## update_yhat <- function(f, g, Xmat, beta) {
+##   ## stopifnot(names(f) == names(g))
+##   ## if (is.null(Xmat)) {
+##   ##   unlist(f) + unlist(g)
+##   ## } else {
+##   ##   stopifnot(names(f) == names(Xmat))
+##   ##   tall_Xmat <- do.call(rbind, Xmat)
+##   ##   unlist(f) + unlist(g) + tall_Xmat %*% beta
+##   ## }
+
+##   ## safer to produce a list, or risk messing up the subject names
+##   stopifnot(names(f) == names(g))
+##   if (is.null(Xmat)) {
+##     purrr::map2(f, g, `+`)
+##   } else {
+##     stopifnot(names(f) == names(Xmat))
+##     purrr::pmap(list(f, g, Xmat), ~..1 + ..2 + ..3 %*% beta)
+##   }
+## }
+
 
 ## datals: list(Bmat_pop: matrix, Bmat_sub: list of matrix, Xmat: matrix, y: col matrix)
 ## xBs: list of matrix
