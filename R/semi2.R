@@ -774,100 +774,85 @@ update_precs_v4 <- function(kcoef, y, prior_ls, init_prec = NULL) {
   }
 }
 
-
-## ## Bmat: list(pop: matrix, sub: matrix)
-## ## Xmat: matrix
-## ## y: col matrix
-## ## para: list(grp_sub: factor)
-## ## split data into chucks according to the subject index arguments are same as
-## ## bayes_ridge_semi().
-## split_data_subjects <- function(Bmat, Xmat, y, para, debug) {
-
-##   stopifnot(is.factor(para$grp_sub)) # must be a factor, or risk mixing up row index
-
-##   Bmat_sub <- split.data.frame(Bmat$sub, para$grp_sub)
-
-##   datals <- list(Bmat_pop = Matrix::Matrix(Bmat$pop, sparse = TRUE),
-##                  Bmat_sub = purrr::map(Bmat_sub, Matrix::Matrix),
-##                  y = Matrix::Matrix(y))
-
-##   if (!is.null(Xmat)) {
-##     datals$Xmat <- Matrix::Matrix(Xmat, sparse = TRUE)
-##   }
-
-  
-##   if (debug) {
-##     ## stopifnot(names(datals$Bmat_pop) == names(datals$Bmat_sub),
-##     ##           names(datals$Bmat_pop) == names(datals$Xmat),
-##     ##           names(datals$Bmat_pop) == names(datals$y))
-##   }
-##   datals
-## }
-
-
-recursive <- function(x, fun) {
+recurse <- function(x, f) {
   if (is.list(x)) {
-    lapply(x, recursive, fun = fun)
+    lapply(x, recurse, f = f)
   } else {
-    fun(x)
+    f(x)
   }
 }
-
-## Recursively check if the list structure matches. Also check if the names
-## match, if the names are present.
-is_match_list <- function(ls1, ls2) {
-  if (is.list(ls1) && is.list(ls2)) {
-    length(ls1) == length(ls2) &&
-      all(names(ls1) == names(ls2),
-          purrr::map2_lgl(ls1, ls2, is_matchls))
-  } else if (is.list(ls1) || is.list(ls2)) {
-    warning('unbalance list.')
-    FALSE
-  } else {
-    TRUE
-  }
+  
+#' Check list structure
+#'
+#' Check if all the lists have the same structure.
+#'
+#' @param ... Lists to be checked.
+#'
+#' @return Boolean
+is_match_list <- function(...) {
+  ## prune the leaves of lists, leaving only structures
+  struct <- lapply(list(...), recurse, f = function(x) NA)
+  ## check if the structures are the same
+  all(vapply(struct, identical, TRUE, y = struct[[1]]))
 }
 
-## calculate posterior mean from an array or vector of samples recursively down
-## a list. The samples are populated along the last dimension, e.g. the
-## columns of a matrix are the samples; the depth of a 3D array are the samples.
-pmean_v4 <- function(samples) {
-  if (is.array(samples)) {
-    rowMeans(samples, dims = length(dim(samples)) - 1)
-  } else if (is.vector(samples, mode = 'numeric')) {
-    mean(samples)
-  } else if (is.list(samples)) {
-    purrr::map(samples, pmean_v4)
-  } else {
-    stop("Invalid samples structure.")
-  }
-}
+#' Get posterior statistics
+#'
+#' Calculate posterior statistics from an array or vector of samples. The samples are
+#' populated along the last dimension, e.g. columns of a matrix are the samples;
+#' the depth of a 3D array are the samples.
+#'
+#' @param samples A vector, matrix or array of samples
+#' @param fun A function for statitics calculation. Support `tidy` style of
+#'   function specification.
+#'
+#' @return A numeric value, vector or matrix
+#' 
+#' @name pstats
+NULL
 
+#' @rdname pstats
+#' 
+#' @details `pstats` calculates posterior statistics given by `fun`.
 pstats_v4 <- function(samples, fun) {
   fun <- purrr::as_mapper(fun)
   if (is.array(samples)) {
     apply(samples, seq(1, length(dim(samples)) - 1), fun)
   } else if (is.vector(samples, mode = 'numeric')) {
     fun(samples)
-  } else if (is.list(samples)) {
-    purrr::map(samples, pstats_v4, fun = fun)
+  ## } else if (is.list(samples)) {
+  ##   purrr::map(samples, pstats_v4, fun = fun)
   } else {
     stop("Invalid samples structure.")
   }
 }
 
+#' @rdname pstats
+#' 
+#' @details `pmean` calculates posterior means, and faster than pstats(samples, mean).
+pmean_v4 <- function(samples) {
+  if (is.array(samples)) {
+    rowMeans(samples, dims = length(dim(samples)) - 1)
+  } else if (is.vector(samples, mode = 'numeric')) {
+    mean(samples)
+  ## } else if (is.list(samples)) {
+  ##   purrr::map(samples, pmean_v4)
+  } else {
+    stop("Invalid samples structure.")
+  }
+}
+
+
+
 #' Convert precision to variance/covariance
 #'
-#' Convert precision (matrices) to variance/covariance (matrices). If given a
-#' list, the conversion is done recursively down the list.
+#' Convert precision (matrices) to variance (covariance matrices).
 #'
-#' @param prec a vector of precision, an array of precision matrices, or a list
+#' @param prec a vector of precision, an array of precision matrices
 #'
-#' @return variance, covariance matrix, or a list
+#' @return variance or covariance matrix
 prec_to_cov <- function(prec) {
-  if (is.list(prec)) {
-    purrr::map(prec, prec_to_cov)
-  } else if (is.vector(prec, mode = 'numeric')) {
+  if (is.vector(prec, mode = 'numeric')) {
     1 / prec
   } else if (is.array(prec) && length(dim(prec)) == 3) {
     size <- dim(prec)[3]
@@ -875,6 +860,10 @@ prec_to_cov <- function(prec) {
       prec[, , i] <- chol2inv(chol(prec[, , i]))
     }
     prec
+  ## } else if (is.list(prec)) {
+  ##   purrr::map(prec, prec_to_cov)
+  } else {
+    stop("Invalid precision structure.")
   }
 }
 
@@ -1130,6 +1119,6 @@ bayes_ridge_semi_v4 <- function(y, Bmat, Xmat,
   
   list(samples = list(coef = coef_samples,
                       prec = prec_samples),
-       means = list(coef = pmean_v4(coef_samples),
-                    prec = pmean_v4(prec_samples)))
+       means = list(coef = recurse(coef_samples, pmean_v4),
+                    prec = recurse(prec_samples, pmean_v4)))
 }

@@ -163,6 +163,9 @@ combine_fm <- function(...) {
     fms <- list(...)
   }
   
+  ## check if the list have the same structure
+  stopifnot(is_match_list(...))
+
   for (i in c("data", "spline")) {
     ## check if the 'data' and 'spline' match up for all models. 'effect' is
     ## ignored for now because the each model is pointing to a different env.
@@ -172,7 +175,7 @@ combine_fm <- function(...) {
   }
 
   fms[[1]]$samples <- do.call(combine_array, purrr::map(fms, 'samples'))
-  fms[[1]]$means <- pmean_v4(fms[[1]]$samples)
+  fms[[1]]$means <- recurse(fms[[1]]$samples, pmean_v4)
   fms[[1]]
 }
 
