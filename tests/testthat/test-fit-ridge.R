@@ -37,8 +37,8 @@ test_that("Prediction varies from the truth (multi pop, with fixed effects)", {
                             size = 100, burn = 50, ridge = FALSE, init = NULL)
   })
 
-  expect_equal(fit_data$truth, predict(fm), tolerance = 0.03)
-  expect_true(all((fit_data$truth - predict(fm)) < mean(abs(fit_data$truth)) * 0.1))
+  expect_equal(fit_data$truth, predict(fm), tolerance = 0.03) # as % of prediction
+  expect_equal(predict(fm), fit_data$truth, tolerance = 0.03) # as % of truth
 })
 
 
@@ -60,8 +60,8 @@ test_that("Prediction varies from the truth (multi pop, with fixed effects)", {
                             size = 100, burn = 50, ridge = FALSE, init = NULL)
   })
   
-  expect_equal(fit_data$truth, predict(fm), tolerance = 0.04)
-  expect_true(all((fit_data$truth - predict(fm)) < mean(abs(fit_data$truth)) * 0.1))
+  expect_equal(fit_data$truth, predict(fm), tolerance = 0.04) # as % of prediction
+  expect_equal(predict(fm), fit_data$truth, tolerance = 0.04) # as % of truth
 })
 
 
