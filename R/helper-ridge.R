@@ -181,12 +181,12 @@ get_transform_bs <- function(size, k) {
 #'     boundaries, and knots outside extrema). Required.
 #' @param deg the degree of polynomial which the B-splines span. Required.
 #' @param EPS tolerance error.
+#' @param ... arguments to be passed on to `splines::splineDesign`.
 #'
 #' @return a list with components `design' (\code{length(x)} by \code{K + deg +
 #'   1} design matrix) and all `knots' (interior and boundaries knots, and knots
-#'   outside extrema). If type == 'LMM', the transformation matrix is returned
-#'   in the 'transform' field.
-get_design_bs <- function(x, K, deg, EPS = 1e-6) {
+#'   outside extrema).
+get_design_bs <- function(x, K, deg, EPS = 1e-6, ...) {
     res <- list()
 
     ## get the knots
@@ -195,16 +195,14 @@ get_design_bs <- function(x, K, deg, EPS = 1e-6) {
         knots <- seq(min(x) - (deg * dist) - EPS, max(x) + (deg * dist) + EPS,
                      len = K + 2 * (deg + 1))
         names(knots) <- NULL
-        res$knots <- knots
     } else if (is.vector(K) && is.numeric(K)) {
         knots <- K
-        res$knots <- knots
     } else {
-        stop("Supplied knots must a numeric vector.")
+        stop("supplied knots must a scaler or a numeric vector.")
     }
     names(knots) <- NULL
 
-    res$design <- splines::splineDesign(knots, x, ord = deg + 1)
+    res$design <- splines::splineDesign(knots, x, ord = deg + 1, ...)
     res$knots <- knots
     res
 }

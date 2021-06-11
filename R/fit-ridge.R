@@ -209,6 +209,26 @@ predict_grp2 <- function(model_mat, by, coefs) {
   }
 }
 
+## Calculate model matrix given x and a basis information. This is useful for
+## processing fitted model to obtain a design matrix for plotting or
+## predictions.
+get_model_mat <- function(x, binfo) {
+  
+  knots <- binfo$knots
+  names(knots) <- NULL
+  deg <- binfo$degree
+
+  if (binfo$type == "tpf") {
+    get_design_tpf(x, knots, deg)$design
+  } else if (binfo$type == "bs-ridge") {
+    get_design_bs(x = x, K = knots, deg = deg, outer.ok = TRUE)$design
+  } else if (binfo$type == "bs") {
+    Tmat <- binfo$trans_mat
+    get_design_bs(x = x, K = knots, deg = deg, outer.ok = TRUE)$design %*% Tmat
+  } else {
+    stop("Unknown type of basis.")
+  }
+}
 
 
 #' Predict with posterior mean (or with other statistics)

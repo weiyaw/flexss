@@ -4,7 +4,7 @@
 \alias{get_design_bs}
 \title{Construct an equidistant B-splines design matrix}
 \usage{
-get_design_bs(x, K, deg, EPS = 1e-06)
+get_design_bs(x, K, deg, EPS = 1e-06, ...)
 }
 \arguments{
 \item{x}{predictor vector. Required.}
@@ -15,12 +15,13 @@ boundaries, and knots outside extrema). Required.}
 \item{deg}{the degree of polynomial which the B-splines span. Required.}
 
 \item{EPS}{tolerance error.}
+
+\item{...}{arguments to be passed on to `splines::splineDesign`.}
 }
 \value{
 a list with components `design' (\code{length(x)} by \code{K + deg +
   1} design matrix) and all `knots' (interior and boundaries knots, and knots
-  outside extrema). If type == 'LMM', the transformation matrix is returned
-  in the 'transform' field.
+  outside extrema).
 }
 \description{
 \code{get_design_bs} returns an equidistant B-splines design matrix without
