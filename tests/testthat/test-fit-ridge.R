@@ -10,7 +10,7 @@ test_that("Prediction varies from the truth (multi pop, no fixed effects)", {
   fix <- y ~ pop
   
   withr::with_seed(10, {
-    fm <- fit_bs_splines_v4(fixed = fix, data = fit_data, spline = spl,
+    fm <- fit_bsm(fixed = fix, data = fit_data, spline = spl,
                             size = 100, burn = 50, ridge = FALSE, init = NULL)
   })
   
@@ -33,7 +33,7 @@ test_that("Prediction varies from the truth (multi pop, with fixed effects)", {
   fix <- y ~ pop + fixed1 + fixed2
   
   withr::with_seed(10, {
-    fm <- fit_bs_splines_v4(fixed = fix, data = fit_data, spline = spl,
+    fm <- fit_bsm(fixed = fix, data = fit_data, spline = spl,
                             size = 100, burn = 50, ridge = FALSE, init = NULL)
   })
 
@@ -55,7 +55,7 @@ test_that("Prediction varies from the truth (multi pop, with fixed effects)", {
   fix <- y ~ pop + fixed1
   
   withr::with_seed(10, {
-    fm <- fit_bs_splines_v4(fixed = fix, data = fit_data,
+    fm <- fit_bsm(fixed = fix, data = fit_data,
                             spline = spl, random = ~random1,
                             size = 100, burn = 50, ridge = FALSE, init = NULL)
   })

@@ -25,9 +25,9 @@ fit_tpf_splines <- function(data, K, deg, size, burn, init = NULL, prior = NULL)
 }
 
 
-#' Fit a B-spline model with population and subject-specific curves.
+#' Fit a Bayesian semiparametric model
 #'
-#' Fit a B-spline model which gives population and subject-specific curves.
+#' Fit a Bayesian semiparametric model that includes subject-specific curves.
 #'
 #' This model is fitted in a Bayesian framework, that is, this routine gives the
 #' samples drawing from the posterior distribution associated to each regression
@@ -39,8 +39,8 @@ fit_tpf_splines <- function(data, K, deg, size, burn, init = NULL, prior = NULL)
 #' removed by default. This is to ensure that the intercept term in the spline
 #' is not spanning the same space as the (potential) main effect terms (and
 #' consequently having an unidentifiable model). For subject-specific splines,
-#' all the coefficients are penalised, so including an intercept will not result
-#' in an unidentifiable model.
+#' since all the coefficients are penalised, including an intercept will not
+#' result in an unidentifiable model.
 #'
 #'  Therefore, the intercept should be added manually either by setting
 #' 'intercept = TRUE' or adding it as fixed effects. 
@@ -72,10 +72,10 @@ fit_tpf_splines <- function(data, K, deg, size, burn, init = NULL, prior = NULL)
 #'
 #' @seealso [s()] for spline specification.
 #' @export
-fit_bs_splines_v4 <- function(fixed, data, spline, random = NULL,
-                              size = 1000, burn = 0,
-                              ridge = FALSE, init = NULL,
-                              prior = NULL, prec = NULL) {
+fit_bsm <- function(fixed, data, spline, random = NULL,
+                    size = 1000, burn = 0,
+                    ridge = FALSE, init = NULL,
+                    prior = NULL, prec = NULL) {
 
   ## check_data_K(data, K)
   ## if (!("pop" %in% names(data))) data$pop <- "dme__"
@@ -130,13 +130,15 @@ fit_bs_splines_v4 <- function(fixed, data, spline, random = NULL,
   ## remove model_mat and return
   fm$spline <- purrr::map(spline_obj, ~`[<-`(.x, 'model_mat', NULL))
   fm$effect <- purrr::map(effect_obj, ~`[<-`(.x, 'model_mat', NULL))
-  class(fm) <- 'blm' # bayesian longitudinal model (black lives matter)
+  class(fm) <- 'bsm' # bayesian semiparametric model
   fm
 }
 
 ## return an appropriate hyperparameter for the variance prior
 get_prior <- function(Bmat, Xmat, a = -0.5, b = 0, v = -1, lambda = NULL) {
   res <- list()
+
+  ## spline hyperparameter
   spl <- function(x) {
     if (attr(x, 'is_sub')) {
       lambda <- diag(attr(x, 'block_dim'))
@@ -236,7 +238,7 @@ get_model_mat <- function(x, binfo) {
 #' Return prediction with the posterior mean (or other statistics) of the
 #' regression coefficients.
 #' 
-#' @param object an 'blm' object.
+#' @param object an 'bsm' object.
 #' @param newdata a data frame with all the covariate required for prediction.
 #' @param level a string specify the name of the spline. Only the component
 #'   correponding to that spline is returned together with the effect terms).
@@ -244,7 +246,7 @@ get_model_mat <- function(x, binfo) {
 #'   the regression coefs. By default, it's `mean`.
 #' 
 #' @export
-predict.blm <- function(object, newdata = NULL, level = NULL, fun = NULL) {
+predict.bsm <- function(object, newdata = NULL, level = NULL, fun = NULL) {
   ## temporary measure. change the output samples in the future
   ## names(object$means$coef) <- c('pop', 'sub', 'fixed')
     

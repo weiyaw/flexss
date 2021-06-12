@@ -16,7 +16,7 @@ spl <- list(pop = ~s(x, by = pop, knots = 3, deg = 2),
 fix <- y ~ pop + effect1 + effect2
 
 set.seed(1)
-fm3 <- fit_bs_splines_v4(fixed = fix, data = fit_data, spline = spl,
+fm3 <- fit_bsm(fixed = fix, data = fit_data, spline = spl,
                          size = 100, burn = 50, ridge = FALSE, init = NULL)
 
 ## predict works
@@ -56,7 +56,7 @@ spl <- list(ozone = ~s(days, knots = 4, deg = 2),
             id.num = ~s(days, by = id.num, knots = 4, deg = 2,
                         intercept = T, is_sub = T, block_dim = 3))
 
-fm6 <- fit_bs_splines_v4(fixed = log.size ~ 1, data = sitka, spline = spl,
+fm6 <- fit_bsm(fixed = log.size ~ 1, data = sitka, spline = spl,
                          size = 10)
 
 plot_dat <- sitka %>%
@@ -80,7 +80,7 @@ growth <- fda::growth[c('hgtm', 'hgtf')] %>%
 
 spl <- list(sex = ~s(age, by = sex, knots = 7, deg = 2),
             child = ~s(age, by = child, knots = 8, deg = 2, is_sub = T))
-fm7 <- fit_bs_splines_v4(height ~ sex, growth, spl, size = 100)
+fm7 <- fit_bsm(height ~ sex, growth, spl, size = 100)
 
 plot_dat <- growth %>%
   tidyr::expand(tidyr::nesting(sex, child),
