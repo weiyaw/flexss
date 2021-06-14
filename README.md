@@ -1,10 +1,9 @@
-# flexss
-Flexible subject-specific curves for analysing longitudinal datasets.
+# flexss (Fitting flexible subject-specific curves)
 
-This is a R package that implements Bayesian penalised splines for longitudinal modelling.
+This is a R package for fitting flexible subject-specific curves when analysing
+longitudinal data. Currently, it implements a Bayesian semiparametric model
+which allows modelling subject-specific curves as splines.
 
-**This is still a work-in-progress and is only made public for my PhD
-application evaluation.**
+**This is still a work-in-progress. More details and an accompanying paper will come.**
 
-**To PhD application reviewers: all routines are stored in ./R directory.**
 
