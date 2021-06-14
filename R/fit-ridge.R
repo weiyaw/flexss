@@ -147,9 +147,9 @@ get_prior <- function(Bmat, Xmat, a = -0.5, b = 0, v = -1, lambda = NULL) {
       list(a = a, b = b)
     }
   }
-
-  ## spline hyperparameter
   res$spl <- purrr::map(Bmat, spl)
+
+  ## effect hyperparameter
   eff <- function(x) {
     if (x == 'random') {
       list(a = a, b = b)
@@ -157,10 +157,8 @@ get_prior <- function(Bmat, Xmat, a = -0.5, b = 0, v = -1, lambda = NULL) {
       NULL
     }
   }
-  
-  ## effect hyperparameter
   if (is.null(Xmat)) {
-    res$effect <- NULL
+    res$eff <- NULL
   } else {
     res$eff <- purrr::imap(Xmat, ~eff(.y))
   }
