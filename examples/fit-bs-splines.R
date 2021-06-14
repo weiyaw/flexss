@@ -16,13 +16,12 @@ fit_data <- get_simdata3() %>%
                 sub = as.factor(sub))
 
 spl <- list(pop = ~s(x, by = pop, knots = 3, deg = 2),
-            sub = ~s(x, by = sub, knots = 3, deg = 2,
-                     intercept = TRUE, is_sub = TRUE, block_dim = 3))
-fix <- y ~ pop + effect1 + effect2
+            sub = ~s(x, by = sub, knots = 3, deg = 2, is_sub = TRUE))
+fix <- y ~ pop + fixed1 + fixed2
 
 set.seed(1)
 fm3 <- fit_bsm(fixed = fix, data = fit_data, spline = spl,
-                         size = 100, burn = 50, ridge = FALSE, init = NULL)
+               size = 100, burn = 50, ridge = FALSE, init = NULL)
 
 ## predict works
 predict(fm3)
@@ -33,7 +32,7 @@ predict(fm3, level = 'pop')
 
 ## if you want to predict at a new data point
 newdata <- tibble::tribble(
-  ~x, ~pop, ~sub, ~effect1, ~effect2,
+  ~x, ~pop, ~sub, ~fixed1, ~fixed2,
   1, 1, 1, 1, 2,
   2, 2, 2, 0, 1,
   3, 1, 3, 0, 0,
