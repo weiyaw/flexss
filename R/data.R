@@ -71,10 +71,15 @@ get_simdata3 <- function(seed = 1, coef = FALSE) {
 
 get_simdata4 <- function(seed = 1, coef = FALSE) {
   
+  if(!requireNamespace("withr", quietly = TRUE)) {
+    stop("Package \"withr\" needed for this function to work. Please install it.",
+         call. = FALSE)
+  }
+
   ## same set up as simdata2, but with one extra fixed and ramdom effect
   res <- get_simdata2(seed = seed, coef = coef)
   withr::local_seed(seed = seed + 1)
-  ranef <- setNames(rnorm(50), as.character(1:50))
+  ranef <- stats::setNames(stats::rnorm(50), as.character(1:50))
   if (coef) {
     ## mean of level 1 is 1 unit larger, level 2 is 2 units smaller
     res$fixed1 <- c(0, 1, -2)

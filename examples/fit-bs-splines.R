@@ -1,3 +1,8 @@
+if (!requireNamespace("magrittr", quietly = TRUE)) {
+  stop("Package \"magrittr\" needed to run the examples. Please install it.",
+       call. = FALSE)
+}
+
 library(magrittr)
 
 ## An example with multiple population, subject curves, and fixed effects

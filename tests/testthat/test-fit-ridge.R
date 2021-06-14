@@ -1,3 +1,13 @@
+if (!requireNamespace("dplyr", quietly = TRUE)) {
+  stop("Package \"dplyr\" needed to run the test files. Please install it.",
+       call. = FALSE)
+}
+
+if (!requireNamespace("withr", quietly = TRUE)) {
+  stop("Package \"withr\" needed to run the test files. Please install it.",
+       call. = FALSE)
+}
+
 ## An example with multiple population and subject curves. 'simdata2' is a
 ## simulated dataset from quadratic splines with 3 equidistant knots.
 test_that("Prediction varies from the truth (multi pop, no fixed effects)", {

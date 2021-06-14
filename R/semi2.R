@@ -437,8 +437,8 @@ update_prec_spline <- function(coefs, prior) {
         iid <- update_with_gamma(coefs_iid, prior$a, prior$b)
       }
       
-      diag(iid, NROW(coefs)) %>%
-        `[<-`(seq_len(block_dim), seq_len(block_dim), block)
+      stopifnot(length(iid) == 1)        # assuming iid is a scaler
+      `[<-`(diag(iid, NROW(coefs)), seq_len(block_dim), seq_len(block_dim), block)
     } else {
       ## when coefs are for ordinary splines
       Kmat <- attr(coefs, 'penalty')

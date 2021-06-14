@@ -1,28 +1,28 @@
-## TO BE ABSORBED BY s(.)
-fit_tpf_splines <- function(data, K, deg, size, burn, init = NULL, prior = NULL) {
+## ## TO BE ABSORBED BY s(.)
+## fit_tpf_splines <- function(data, K, deg, size, burn, init = NULL, prior = NULL) {
 
-  check_data_K(data, K)
-  if (!("pop" %in% names(data))) data$pop <- "dme__"
+##   check_data_K(data, K)
+##   if (!("pop" %in% names(data))) data$pop <- "dme__"
 
-  ## design matrix for population curves
-  des_info_pop <- get_design_tpf(data$x, K$pop, deg)
-  Bmat <- list(pop = des_info_pop$design)
-  Kmat <- cbind(matrix(0, K$pop, deg + 1), diag(K$pop))
+##   ## design matrix for population curves
+##   des_info_pop <- get_design_tpf(data$x, K$pop, deg)
+##   Bmat <- list(pop = des_info_pop$design)
+##   Kmat <- cbind(matrix(0, K$pop, deg + 1), diag(K$pop))
 
-  ## design matrix for subject-specific curves
-  des_info_sub <- get_design_bs(data$x, K$sub, deg)
-  Bmat$sub <- des_info_sub$design
+##   ## design matrix for subject-specific curves
+##   des_info_sub <- get_design_bs(data$x, K$sub, deg)
+##   Bmat$sub <- des_info_sub$design
 
-  fm <- bayes_ridge_sub_v2(y = data$y, grp = list(pop = data$pop, sub = data$sub),
-                           Bmat = Bmat, Kmat = Kmat, dim_sub1 = deg + 1, burn = burn,
-                           size = size, init = init, prior = prior)
+##   fm <- bayes_ridge_sub_v2(y = data$y, grp = list(pop = data$pop, sub = data$sub),
+##                            Bmat = Bmat, Kmat = Kmat, dim_sub1 = deg + 1, burn = burn,
+##                            size = size, init = init, prior = prior)
 
-  fm$basis <- list(pop = NA, sub = NA)
-  fm$basis$pop <- list(type = 'tpf', knots = des_info_pop$knots, degree = deg)
-  fm$basis$sub <- list(type = 'tpf', knots = des_info_sub$knots, degree = deg)
-  fm$data <- data[c('x', 'y', 'sub', 'pop')]
-  fm
-}
+##   fm$basis <- list(pop = NA, sub = NA)
+##   fm$basis$pop <- list(type = 'tpf', knots = des_info_pop$knots, degree = deg)
+##   fm$basis$sub <- list(type = 'tpf', knots = des_info_sub$knots, degree = deg)
+##   fm$data <- data[c('x', 'y', 'sub', 'pop')]
+##   fm
+## }
 
 
 #' Fit a Bayesian semiparametric model

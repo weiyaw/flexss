@@ -26,6 +26,11 @@ flatten_chain <- function(fm) {
     index <- grep(paste0("^coef_spl_", spl_name), para)
     flat[, index] <- t(spl)
 
+    if (!requireNamespace("stringr", quietly = TRUE)) {
+      stop("Package \"stringr\" needed for this function to work. Please install it.",
+           call. = FALSE)
+    }
+
     ## ensure that the values are in the correct order
     stopifnot(
       identical(rle(stringr::str_extract(colnames(flat)[index],
@@ -307,8 +312,8 @@ autocovariance <- function(y) {
     Mt2 <- 2 * M
     yc <- y - mean(y)
     yc <- c(yc, rep.int(0, Mt2 - N))
-    transform <- fft(yc)
-    ac <- fft(Conj(transform) * transform, inverse = TRUE)
+    transform <- stats::fft(yc)
+    ac <- stats::fft(Conj(transform) * transform, inverse = TRUE)
     ## use "biased" estimate as recommended by Geyer (1992)
     ac <- Re(ac)[1:N] / (N * 2 * N-1)
     ac
@@ -342,7 +347,7 @@ autocorrelation <- function(y) {
 z_scale <- function(x) {
     S <- length(x)
     r <- rank(x, ties.method = 'average')
-    z <- qnorm((r - 1 / 2) / S)
+    z <- stats::qnorm((r - 1 / 2) / S)
     if (!is.null(dim(x))) {
         ## output should have the input dimension
         z <- array(z, dim = dim(x), dimnames = dimnames(x))
@@ -432,9 +437,9 @@ rhat_rfun <- function(sims) {
     chain_var <- numeric(chains)
     for (i in seq_len(chains)) {
         chain_mean[i] <- mean(sims[, i])
-        chain_var[i] <- var(sims[, i])
+        chain_var[i] <- stats::var(sims[, i])
     }
-    var_between <- n_samples * var(chain_mean)
+    var_between <- n_samples * stats::var(chain_mean)
     var_within <- mean(chain_var)
     sqrt((var_between / var_within + n_samples - 1) / n_samples)
 }
@@ -470,7 +475,7 @@ ess_rfun <- function(sims) {
   mean_var <- mean(acov[1, ]) * n_samples / (n_samples - 1)
   var_plus <- mean_var * (n_samples - 1) / n_samples
   if (chains > 1)
-    var_plus <- var_plus + var(chain_mean)
+    var_plus <- var_plus + stats::var(chain_mean)
 
   ## Geyer's initial positive sequence
   rho_hat_t <- rep.int(0, n_samples)
@@ -536,7 +541,7 @@ rhat <- function(sims) {
   }
 
   bulk_rhat <- rhat_rfun(z_scale(split_chains(sims)))
-  sims_folded <- abs(sims - median(sims))
+  sims_folded <- abs(sims - stats::median(sims))
   tail_rhat <- rhat_rfun(z_scale(split_chains(sims_folded)))
   max(bulk_rhat, tail_rhat)
 }
@@ -584,18 +589,18 @@ summary_matrix_flats <- function(flats) {
   ## need working
   ## need to write sweep_posterior_flat
 
-  quan025 <- function(x) quantile(x, 0.025, names = FALSE)
-  quan500 <- function(x) quantile(x, 0.5, names = FALSE)
-  quan975 <- function(x) quantile(x, 0.975, names = FALSE)
+  quan025 <- function(x) stats::quantile(x, 0.025, names = FALSE)
+  quan500 <- function(x) stats::quantile(x, 0.5, names = FALSE)
+  quan975 <- function(x) stats::quantile(x, 0.975, names = FALSE)
 
-  tibble::tibble(Parameter = dimnames(flats)[[3]],
-                 Rhat = rhat_flats(flats),
-                 n_eff = ess_flats(flats),
-                 mean = sweep_posterior_flats(flats, mean),
-                 sd = sweep_posterior_flats(flats, sd),
-                 "2.5%" = sweep_posterior_flats(flats, quan025),
-                 "50%" = sweep_posterior_flats(flats, quan500),
-                 "97.5%" = sweep_posterior_flats(flats, quan975))
+  data.frame(Parameter = dimnames(flats)[[3]],
+             Rhat = rhat_flats(flats),
+             n_eff = ess_flats(flats),
+             mean = sweep_posterior_flats(flats, mean),
+             sd = sweep_posterior_flats(flats, stats::sd),
+             "2.5%" = sweep_posterior_flats(flats, quan025),
+             "50%" = sweep_posterior_flats(flats, quan500),
+             "97.5%" = sweep_posterior_flats(flats, quan975))
 }
 
 ## return a summary statistics for posterior
@@ -608,10 +613,13 @@ summary_matrix <- function(...) {
 ## rank plot
 mcmc_hist_r_scale <- function(x, nbreaks = 50, ...) {
     max <- prod(dim(x)[1:2])
+    if (!requireNamespace("bayesplot", quietly = TRUE)) {
+      stop("Package \"bayesplot\" needed for this function to work. Please install it.",
+           call. = FALSE)
+    }
     bayesplot::mcmc_hist(r_scale(x),
                          breaks = seq(0, max, by = max / nbreaks) + 0.5,
-                         ...) +
-        theme(axis.line.y = element_blank())
+                         ...)
 }
 
 

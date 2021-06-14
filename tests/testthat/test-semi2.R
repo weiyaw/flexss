@@ -1,3 +1,13 @@
+if (!requireNamespace("magrittr", quietly = TRUE)) {
+  stop("Package \"magrittr\" needed to run the test files. Please install it.",
+       call. = FALSE)
+}
+
+if (!requireNamespace("withr", quietly = TRUE)) {
+  stop("Package \"withr\" needed to run the test files. Please install it.",
+       call. = FALSE)
+}
+
 library(magrittr)
 
 ## Fit the model with some dummy design matrices (i.e. fit with the truth)
